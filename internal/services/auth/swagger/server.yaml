@@ -1,0 +1,66 @@
+layout:
+  application:
+    - name: configure
+      source: serverConfigureapi
+      target: "{{ .Target }}"
+      file_name: "configure_{{ .Name }}.go"
+      skip_exists: true
+
+    - name: embedded_spec
+      source: asset:swaggerJsonEmbed
+      target: "{{ joinFilePath .Target .ServerPackage }}"
+      file_name: "embedded_spec.go"
+
+    - name: httpHandler
+      source: serverHandler
+      target: "{{ .Target }}"
+      file_name: "handler.go"
+      skip_exists: true
+
+    - name: httpRouter
+      source: serverHandlerRoutes
+      target: "{{ .Target }}"
+      file_name: "handler_routes.go"
+
+    - name: swaggerDocJSON
+      source: serverSwaggerDocJSON
+      target: "{{ .Target }}"
+      file_name: "swagger_doc_json.go"
+      skip_exists: true
+
+    - name: swaggerDocUI
+      source: serverSwaggerDocUI
+      target: "{{ .Target }}"
+      file_name: "swagger_doc_ui.go"
+      skip_exists: true
+
+    - name: builder
+      source: serverBuilder
+      target: "{{ joinFilePath .Target .ServerPackage .Package }}"
+      file_name: "{{ snakize (pascalize .Name) }}_api.go"
+
+  models:
+    - name: definition
+      source: asset:model
+      target: "{{ joinFilePath .Target .ModelPackage }}"
+      file_name: "{{ (snakize (pascalize .Name)) }}.go"
+      skip_exists: false
+  operations:
+    - name: parameters
+      source: asset:serverParameter
+      target: "{{ if gt (len .Tags) 0 }}{{ joinFilePath .Target .ServerPackage .APIPackage .Package  }}{{ else }}{{ joinFilePath .Target .ServerPackage .Package  }}{{ end }}"
+      file_name: "{{ (snakize (pascalize .Name)) }}_parameters.go"
+    - name: responses
+      source: asset:serverResponses
+      target: "{{ if gt (len .Tags) 0 }}{{ joinFilePath .Target .ServerPackage .APIPackage .Package  }}{{ else }}{{ joinFilePath .Target .ServerPackage .Package  }}{{ end }}"
+      file_name: "{{ (snakize (pascalize .Name)) }}_responses.go"
+    - name: handler
+      source: asset:serverOperation
+      target: "{{ if gt (len .Tags) 0 }}{{ joinFilePath .Target .ServerPackage .APIPackage .Package  }}{{ else }}{{ joinFilePath .Target .ServerPackage .Package  }}{{ end }}"
+      file_name: "{{ (snakize (pascalize .Name)) }}.go"
+    - name: handlerFunction
+      source: serverHandlerFunction
+      target: "{{ .Target }}"
+      file_name: "{{ (snakize (pascalize .Name)) }}.go"
+      skip_exists: true
+  operation_groups:
