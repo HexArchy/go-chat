@@ -30,7 +30,7 @@ func NewLoginUser(ctx *middleware.Context, handler LoginUserHandler) *LoginUser 
 }
 
 /*
-	LoginUser swagger:route POST /api/v1/login Authentication loginUser
+	LoginUser swagger:route POST /login Authentication loginUser
 
 Authentication
 */

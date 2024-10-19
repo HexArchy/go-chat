@@ -6,9 +6,11 @@ import (
 	"net/http"
 
 	"github.com/go-openapi/loads"
+	"go.uber.org/zap"
 
 	"github.com/HexArch/go-chat/internal/services/auth/internal/handlers/http/api/restapi"
 	"github.com/HexArch/go-chat/internal/services/auth/internal/handlers/http/api/restapi/operations"
+	usecases "github.com/HexArch/go-chat/internal/services/auth/internal/use-cases"
 
 	apiAuthentication "github.com/HexArch/go-chat/internal/services/auth/internal/handlers/http/api/restapi/operations/authentication"
 
@@ -16,17 +18,21 @@ import (
 )
 
 type Handler struct {
-	ops *operations.SsoAPI
+	ops      *operations.SsoAPI
+	logger   *zap.Logger
+	useCases *usecases.UseCases
 }
 
-func NewHandler() (*Handler, error) {
+func NewHandler(logger *zap.Logger, useCases *usecases.UseCases) (*Handler, error) {
 	swaggerSpec, err := loads.Analyzed(restapi.SwaggerJSON, "")
 	if err != nil {
 		return nil, err
 	}
 
 	r := &Handler{
-		ops: operations.NewSsoAPI(swaggerSpec),
+		ops:      operations.NewSsoAPI(swaggerSpec),
+		logger:   logger,
+		useCases: useCases,
 	}
 	r.setUpHandlers()
 

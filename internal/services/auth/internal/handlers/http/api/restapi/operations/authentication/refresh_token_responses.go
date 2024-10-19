@@ -147,3 +147,48 @@ func (o *RefreshTokenUnauthorized) WriteResponse(rw http.ResponseWriter, produce
 		}
 	}
 }
+
+// RefreshTokenInternalServerErrorCode is the HTTP code returned for type RefreshTokenInternalServerError
+const RefreshTokenInternalServerErrorCode int = 500
+
+/*
+RefreshTokenInternalServerError Internal server error
+
+swagger:response refreshTokenInternalServerError
+*/
+type RefreshTokenInternalServerError struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewRefreshTokenInternalServerError creates RefreshTokenInternalServerError with default headers values
+func NewRefreshTokenInternalServerError() *RefreshTokenInternalServerError {
+
+	return &RefreshTokenInternalServerError{}
+}
+
+// WithPayload adds the payload to the refresh token internal server error response
+func (o *RefreshTokenInternalServerError) WithPayload(payload *models.Error) *RefreshTokenInternalServerError {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the refresh token internal server error response
+func (o *RefreshTokenInternalServerError) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *RefreshTokenInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}

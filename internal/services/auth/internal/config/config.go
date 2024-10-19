@@ -1,6 +1,7 @@
 package config
 
 import (
+	"flag"
 	"log"
 	"strings"
 	"time"
@@ -17,11 +18,12 @@ import (
 var k = koanf.New(".")
 
 type Config struct {
-	Engines  EnginesConfig  `koanf:"engines"`
-	Auth     AuthConfig     `koanf:"auth"`
-	Logging  LoggingConfig  `koanf:"logging"`
-	Vault    VaultConfig    `koanf:"vault"`
-	Handlers HandlersConfig `koanf:"handlers"`
+	Engines          EnginesConfig  `koanf:"engines"`
+	Auth             AuthConfig     `koanf:"auth"`
+	Logging          LoggingConfig  `koanf:"logging"`
+	Vault            VaultConfig    `koanf:"vault"`
+	Handlers         HandlersConfig `koanf:"handlers"`
+	GracefulShutdown time.Duration  `koanf:"graceful_shutdown"`
 }
 
 type EnginesConfig struct {
@@ -69,13 +71,17 @@ type LoggingConfig struct {
 }
 
 func LoadConfig() (*Config, error) {
+	// Define a flag for the config file path.
+	configPath := flag.String("config", "configs/config.local.yaml", "Path to the configuration file")
+	flag.Parse()
+
 	// Load default values.
 	if err := loadDefaults(); err != nil {
 		return nil, errors.Wrap(err, "load defaults")
 	}
 
 	// Load from YAML file.
-	if err := k.Load(file.Provider("config.yaml"), yaml.Parser()); err != nil {
+	if err := k.Load(file.Provider(*configPath), yaml.Parser()); err != nil {
 		log.Printf("Error loading from YAML file: %v", err)
 	}
 

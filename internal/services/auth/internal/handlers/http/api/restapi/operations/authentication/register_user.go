@@ -30,7 +30,7 @@ func NewRegisterUser(ctx *middleware.Context, handler RegisterUserHandler) *Regi
 }
 
 /*
-	RegisterUser swagger:route POST /api/v1/register Authentication registerUser
+	RegisterUser swagger:route POST /register Authentication registerUser
 
 Register a new user
 */

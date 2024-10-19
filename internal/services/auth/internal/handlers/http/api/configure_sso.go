@@ -54,9 +54,15 @@ func configureAPI(api *operations.SsoAPI) http.Handler {
 
 	api.ServerShutdown = func() {}
 
-	return api.Serve(func(handler http.Handler) http.Handler {
-		return handler
-	})
+	return setupGlobalMiddleware(api.Serve(setupMiddlewares))
+}
+
+func setupMiddlewares(handler http.Handler) http.Handler {
+	return handler
+}
+
+func setupGlobalMiddleware(handler http.Handler) http.Handler {
+	return handler
 }
 
 // The TLS configuration before HTTPS server starts.

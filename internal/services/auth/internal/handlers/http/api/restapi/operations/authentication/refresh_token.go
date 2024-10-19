@@ -30,7 +30,7 @@ func NewRefreshToken(ctx *middleware.Context, handler RefreshTokenHandler) *Refr
 }
 
 /*
-	RefreshToken swagger:route POST /api/v1/refresh Authentication refreshToken
+	RefreshToken swagger:route POST /refresh Authentication refreshToken
 
 Refresh access token
 */

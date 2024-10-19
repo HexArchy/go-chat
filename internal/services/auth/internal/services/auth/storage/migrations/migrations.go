@@ -1,16 +1,8 @@
 package migrations
 
 import (
-	"github.com/HexArch/go-chat/internal/services/auth/internal/services/auth/storage"
 	"gorm.io/gorm"
 )
-
-func Migrate(db *gorm.DB) error {
-	return db.AutoMigrate(
-		&storage.UserDTO{},
-		&storage.RefreshTokenDTO{},
-	)
-}
 
 func CreateInitialSchema(db *gorm.DB) error {
 	return db.Exec(`
@@ -50,7 +42,7 @@ func CreateInitialSchema(db *gorm.DB) error {
 		END;
 		$$ LANGUAGE plpgsql;
 
-		CREATE TRIGGER users_updated_at
+		CREATE OR REPLACE TRIGGER users_updated_at
 		BEFORE UPDATE ON users
 		FOR EACH ROW
 		EXECUTE FUNCTION update_updated_at();
@@ -65,9 +57,17 @@ func CreateInitialSchema(db *gorm.DB) error {
 		END;
 		$$ LANGUAGE plpgsql;
 
-		CREATE TRIGGER users_check_age
+		CREATE OR REPLACE TRIGGER users_check_age
 		BEFORE INSERT OR UPDATE ON users
 		FOR EACH ROW
 		EXECUTE FUNCTION check_user_age();
 	`).Error
+}
+
+func SetupSchema(db *gorm.DB, schemaName string) error {
+	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS " + schemaName).Error; err != nil {
+		return err
+	}
+
+	return db.Exec("SET search_path TO " + schemaName).Error
 }

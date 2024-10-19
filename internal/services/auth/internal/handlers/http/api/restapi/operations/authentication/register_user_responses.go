@@ -147,3 +147,48 @@ func (o *RegisterUserConflict) WriteResponse(rw http.ResponseWriter, producer ru
 		}
 	}
 }
+
+// RegisterUserInternalServerErrorCode is the HTTP code returned for type RegisterUserInternalServerError
+const RegisterUserInternalServerErrorCode int = 500
+
+/*
+RegisterUserInternalServerError Internal server error
+
+swagger:response registerUserInternalServerError
+*/
+type RegisterUserInternalServerError struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewRegisterUserInternalServerError creates RegisterUserInternalServerError with default headers values
+func NewRegisterUserInternalServerError() *RegisterUserInternalServerError {
+
+	return &RegisterUserInternalServerError{}
+}
+
+// WithPayload adds the payload to the register user internal server error response
+func (o *RegisterUserInternalServerError) WithPayload(payload *models.Error) *RegisterUserInternalServerError {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the register user internal server error response
+func (o *RegisterUserInternalServerError) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *RegisterUserInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}

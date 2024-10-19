@@ -4,12 +4,10 @@ info:
   version: 1.0.0
   description: API for user authentication and management
 
-basePath: /v1
-schemes:
-  - https
+basePath: "/api/v1"
 
 paths:
-  /api/v1/register:
+  /register:
     post:
       summary: Register a new user
       tags:
@@ -30,8 +28,10 @@ paths:
           $ref: '#/responses/BadRequest'
         409:
           $ref: '#/responses/Conflict'
+        500:
+          $ref: '#/responses/InternalServerError'
 
-  /api/v1/login:
+  /login:
     post:
       summary: Authentication
       tags:
@@ -52,8 +52,10 @@ paths:
           $ref: '#/responses/BadRequest'
         401:
           $ref: '#/responses/Unauthorized'
+        500:
+          $ref: '#/responses/InternalServerError'
 
-  /api/v1/refresh:
+  /refresh:
     post:
       summary: Refresh access token
       tags:
@@ -74,8 +76,10 @@ paths:
           $ref: '#/responses/BadRequest'
         401:
           $ref: '#/responses/Unauthorized'
+        500:
+          $ref: '#/responses/InternalServerError'
 
-  /api/v1/users/{userId}:
+  /users/{userId}:
     post:
       summary: Update user information
       tags:
@@ -106,6 +110,8 @@ paths:
           $ref: '#/responses/Forbidden'
         404:
           $ref: '#/responses/NotFound'
+        500:
+          $ref: '#/responses/InternalServerError'
 
     delete:
       summary: Delete user
@@ -128,6 +134,8 @@ paths:
           $ref: '#/responses/Forbidden'
         404:
           $ref: '#/responses/NotFound'
+        500:
+          $ref: '#/responses/InternalServerError'
 
 definitions:
   RegisterUserRequest:
@@ -273,6 +281,11 @@ responses:
 
   Conflict:
     description: Conflict
+    schema:
+      $ref: '#/definitions/Error'
+  
+  InternalServerError:
+    description: Internal server error
     schema:
       $ref: '#/definitions/Error'
 

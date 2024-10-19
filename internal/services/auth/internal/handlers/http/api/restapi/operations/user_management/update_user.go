@@ -30,7 +30,7 @@ func NewUpdateUser(ctx *middleware.Context, handler UpdateUserHandler) *UpdateUs
 }
 
 /*
-	UpdateUser swagger:route POST /api/v1/users/{userId} User Management updateUser
+	UpdateUser swagger:route POST /users/{userId} User Management updateUser
 
 Update user information
 */

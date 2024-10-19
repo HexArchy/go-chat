@@ -317,23 +317,23 @@ func (o *SsoAPI) initHandlerCache() {
 	if o.handlers["DELETE"] == nil {
 		o.handlers["DELETE"] = make(map[string]http.Handler)
 	}
-	o.handlers["DELETE"]["/api/v1/users/{userId}"] = user_management.NewDeleteUser(o.context, o.UserManagementDeleteUserHandler)
+	o.handlers["DELETE"]["/users/{userId}"] = user_management.NewDeleteUser(o.context, o.UserManagementDeleteUserHandler)
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
-	o.handlers["POST"]["/api/v1/login"] = authentication.NewLoginUser(o.context, o.AuthenticationLoginUserHandler)
+	o.handlers["POST"]["/login"] = authentication.NewLoginUser(o.context, o.AuthenticationLoginUserHandler)
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
-	o.handlers["POST"]["/api/v1/refresh"] = authentication.NewRefreshToken(o.context, o.AuthenticationRefreshTokenHandler)
+	o.handlers["POST"]["/refresh"] = authentication.NewRefreshToken(o.context, o.AuthenticationRefreshTokenHandler)
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
-	o.handlers["POST"]["/api/v1/register"] = authentication.NewRegisterUser(o.context, o.AuthenticationRegisterUserHandler)
+	o.handlers["POST"]["/register"] = authentication.NewRegisterUser(o.context, o.AuthenticationRegisterUserHandler)
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
-	o.handlers["POST"]["/api/v1/users/{userId}"] = user_management.NewUpdateUser(o.context, o.UserManagementUpdateUserHandler)
+	o.handlers["POST"]["/users/{userId}"] = user_management.NewUpdateUser(o.context, o.UserManagementUpdateUserHandler)
 }
 
 // Serve creates a http handler to serve the API over HTTP

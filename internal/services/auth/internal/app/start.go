@@ -3,10 +3,6 @@ package app
 import (
 	"context"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
@@ -14,12 +10,18 @@ import (
 
 func (a *App) start(ctx context.Context) {
 	go a.startHTTPServer(ctx)
+
+	if err := a.grShutdown.Wait(a.cfg.GracefulShutdown); err != nil {
+		a.logger.Error("Error during graceful shutdown", zap.Error(err))
+	} else {
+		a.logger.Info("Application gracefully stopped")
+	}
 }
 
 func (a *App) startHTTPServer(ctx context.Context) {
 	router := mux.NewRouter()
 
-	a.apiHandler.AddRoutes(router)
+	a.setupRoutes(router)
 
 	srv := &http.Server{
 		Addr:         a.cfg.Handlers.HTTP.Address + ":" + a.cfg.Handlers.HTTP.Port,
@@ -28,24 +30,24 @@ func (a *App) startHTTPServer(ctx context.Context) {
 		WriteTimeout: a.cfg.Handlers.HTTP.WriteTimeout,
 	}
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	a.grShutdown.Add(func(ctx context.Context) error {
+		return srv.Shutdown(ctx)
+	})
 
 	go func() {
-		a.logger.Info("Starting HTTP server", zap.String("address", a.cfg.Handlers.HTTP.Address+":"+a.cfg.Handlers.HTTP.Port))
+		a.logger.Info("Starting HTTP server",
+			zap.String("address", srv.Addr),
+			zap.String("readTimeout", a.cfg.Handlers.HTTP.ReadTimeout.String()),
+			zap.String("writeTimeout", a.cfg.Handlers.HTTP.WriteTimeout.String()))
+
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			a.logger.Fatal("Failed to start HTTP server", zap.Error(err))
 		}
 	}()
+}
 
-	<-stop
-	a.logger.Info("Shutting down server...")
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+func (a *App) setupRoutes(router *mux.Router) {
+	a.apiHandler.AddRoutes(router)
 
-	if err := srv.Shutdown(ctx); err != nil {
-		a.logger.Error("Error during server shutdown", zap.Error(err))
-	}
-
-	a.logger.Info("Server gracefully stopped")
+	a.logger.Info("Routes set up successfully")
 }

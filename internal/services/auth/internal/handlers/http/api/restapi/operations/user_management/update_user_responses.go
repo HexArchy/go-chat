@@ -237,3 +237,48 @@ func (o *UpdateUserNotFound) WriteResponse(rw http.ResponseWriter, producer runt
 		}
 	}
 }
+
+// UpdateUserInternalServerErrorCode is the HTTP code returned for type UpdateUserInternalServerError
+const UpdateUserInternalServerErrorCode int = 500
+
+/*
+UpdateUserInternalServerError Internal server error
+
+swagger:response updateUserInternalServerError
+*/
+type UpdateUserInternalServerError struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewUpdateUserInternalServerError creates UpdateUserInternalServerError with default headers values
+func NewUpdateUserInternalServerError() *UpdateUserInternalServerError {
+
+	return &UpdateUserInternalServerError{}
+}
+
+// WithPayload adds the payload to the update user internal server error response
+func (o *UpdateUserInternalServerError) WithPayload(payload *models.Error) *UpdateUserInternalServerError {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the update user internal server error response
+func (o *UpdateUserInternalServerError) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *UpdateUserInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}

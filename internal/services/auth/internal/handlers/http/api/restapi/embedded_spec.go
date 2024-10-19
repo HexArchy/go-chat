@@ -18,18 +18,15 @@ var (
 
 func init() {
 	SwaggerJSON = json.RawMessage([]byte(`{
-  "schemes": [
-    "https"
-  ],
   "swagger": "2.0",
   "info": {
     "description": "API for user authentication and management",
     "title": "Authentication Service API",
     "version": "1.0.0"
   },
-  "basePath": "/v1",
+  "basePath": "/api/v1",
   "paths": {
-    "/api/v1/login": {
+    "/login": {
       "post": {
         "tags": [
           "Authentication"
@@ -58,11 +55,14 @@ func init() {
           },
           "401": {
             "$ref": "#/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/responses/InternalServerError"
           }
         }
       }
     },
-    "/api/v1/refresh": {
+    "/refresh": {
       "post": {
         "tags": [
           "Authentication"
@@ -91,11 +91,14 @@ func init() {
           },
           "401": {
             "$ref": "#/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/responses/InternalServerError"
           }
         }
       }
     },
-    "/api/v1/register": {
+    "/register": {
       "post": {
         "tags": [
           "Authentication"
@@ -124,11 +127,14 @@ func init() {
           },
           "409": {
             "$ref": "#/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/responses/InternalServerError"
           }
         }
       }
     },
-    "/api/v1/users/{userId}": {
+    "/users/{userId}": {
       "post": {
         "security": [
           {
@@ -174,6 +180,9 @@ func init() {
           },
           "404": {
             "$ref": "#/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/responses/InternalServerError"
           }
         }
       },
@@ -208,6 +217,9 @@ func init() {
           },
           "404": {
             "$ref": "#/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/responses/InternalServerError"
           }
         }
       }
@@ -401,6 +413,12 @@ func init() {
         "$ref": "#/definitions/Error"
       }
     },
+    "InternalServerError": {
+      "description": "Internal server error",
+      "schema": {
+        "$ref": "#/definitions/Error"
+      }
+    },
     "NotFound": {
       "description": "Not found",
       "schema": {
@@ -423,18 +441,15 @@ func init() {
   }
 }`))
 	FlatSwaggerJSON = json.RawMessage([]byte(`{
-  "schemes": [
-    "https"
-  ],
   "swagger": "2.0",
   "info": {
     "description": "API for user authentication and management",
     "title": "Authentication Service API",
     "version": "1.0.0"
   },
-  "basePath": "/v1",
+  "basePath": "/api/v1",
   "paths": {
-    "/api/v1/login": {
+    "/login": {
       "post": {
         "tags": [
           "Authentication"
@@ -469,11 +484,17 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
           }
         }
       }
     },
-    "/api/v1/refresh": {
+    "/refresh": {
       "post": {
         "tags": [
           "Authentication"
@@ -508,11 +529,17 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
           }
         }
       }
     },
-    "/api/v1/register": {
+    "/register": {
       "post": {
         "tags": [
           "Authentication"
@@ -547,11 +574,17 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
           }
         }
       }
     },
-    "/api/v1/users/{userId}": {
+    "/users/{userId}": {
       "post": {
         "security": [
           {
@@ -609,6 +642,12 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
           }
         }
       },
@@ -649,6 +688,12 @@ func init() {
           },
           "404": {
             "description": "Not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -841,6 +886,12 @@ func init() {
     },
     "Forbidden": {
       "description": "Forbidden",
+      "schema": {
+        "$ref": "#/definitions/Error"
+      }
+    },
+    "InternalServerError": {
+      "description": "Internal server error",
       "schema": {
         "$ref": "#/definitions/Error"
       }
