@@ -4,63 +4,46 @@ import (
 	"context"
 
 	"github.com/HexArch/go-chat/internal/services/auth/internal/entities"
+
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 )
 
 type UseCase struct {
-	authService AuthService
-	authStorage AuthStorage
-	rbac        RBAC
+	userService UserService
 }
 
-func New(authService AuthService, authStorage AuthStorage, rbac RBAC) *UseCase {
+func New(deps Deps) *UseCase {
 	return &UseCase{
-		authService: authService,
-		authStorage: authStorage,
-		rbac:        rbac,
+		userService: deps.UserService,
 	}
 }
 
-func (uc *UseCase) Execute(ctx context.Context, input entities.User, updaterID string) (entities.User, error) {
-	// Get the updater's authenticated user information.
-	updater, err := uc.authStorage.GetUserByID(ctx, updaterID)
+func (uc *UseCase) Execute(ctx context.Context, requesterID uuid.UUID, user *entities.User) error {
+	hasPermission, err := uc.userService.CheckPermission(ctx, requesterID, "admin")
 	if err != nil {
-		return entities.User{}, errors.Wrap(err, "failed to get updater user")
+		return errors.Wrap(err, "failed to check permissions")
 	}
 
-	// Check if the updater has permission to update the user.
-	if updater.ID != input.ID && !uc.rbac.CheckPermission(updater.Roles, "update", "user") {
-		return entities.User{}, errors.Wrap(entities.ErrForbidden, "user does not have permission to update this user")
+	if !hasPermission && requesterID != user.ID {
+		return entities.ErrPermissionDenied
 	}
 
-	// Get the current user data.
-	user, err := uc.authStorage.GetUserByID(ctx, input.ID)
-	if err != nil {
-		return entities.User{}, errors.Wrap(err, "failed to get user")
+	if user.Email != "" {
+		if err = user.ValidateEmail(); err != nil {
+			return errors.Wrap(err, "failed to validate email")
+		}
 	}
 
-	// Update user fields.
-	user.Email = input.Email
-	user.Name = input.Name
-	user.Nickname = input.Nickname
-	user.PhoneNumber = input.PhoneNumber
-	user.Age = input.Age
-	user.Bio = input.Bio
-
-	// Only allow role updates if the updater has admin privileges.
-	if uc.rbac.CheckPermission(updater.Roles, "update", "user_roles") {
-		user.Roles = input.Roles
+	if user.Password != "" {
+		if err = user.ValidatePassword(); err != nil {
+			return errors.Wrap(err, "failed to validate password")
+		}
 	}
 
-	// Validate updated user data.
-	if err := user.Validate(); err != nil {
-		return entities.User{}, errors.Wrap(entities.ErrInvalidInput, err.Error())
+	if err := uc.userService.UpdateUser(ctx, user); err != nil {
+		return errors.Wrap(err, "failed to update user")
 	}
 
-	// Update user in storage.
-	if err := uc.authStorage.UpdateUser(ctx, user); err != nil {
-		return entities.User{}, errors.Wrap(err, "failed to update user")
-	}
-
-	return *user, nil
+	return nil
 }

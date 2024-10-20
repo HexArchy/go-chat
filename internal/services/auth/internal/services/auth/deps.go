@@ -2,19 +2,24 @@ package auth
 
 import (
 	"context"
-	"time"
 
 	"github.com/HexArch/go-chat/internal/services/auth/internal/entities"
+	"github.com/google/uuid"
 )
 
-type AuthStorage interface {
-	CreateUser(ctx context.Context, user *entities.User) error
+type UserStorage interface {
+	GetUserByID(ctx context.Context, userID uuid.UUID) (*entities.User, error)
 	GetUserByEmail(ctx context.Context, email string) (*entities.User, error)
-	GetUserByID(ctx context.Context, id string) (*entities.User, error)
-	UpdateUser(ctx context.Context, user *entities.User) error
-	DeleteUser(ctx context.Context, id string) error
-	StoreRefreshToken(ctx context.Context, userID, token string, ttl time.Duration) error
-	ValidateRefreshToken(ctx context.Context, userID, token string) (bool, error)
-	RevokeRefreshToken(ctx context.Context, userID, token string) error
-	RevokeAllRefreshTokens(ctx context.Context, userID string) error
+}
+
+type TokenStorage interface {
+	CreateToken(ctx context.Context, token *entities.Token) error
+	GetToken(ctx context.Context, tokenString string) (*entities.Token, error)
+	DeleteToken(ctx context.Context, tokenString string) error
+	DeleteTokensByUserID(ctx context.Context, userID uuid.UUID) error
+}
+
+type Deps struct {
+	UserStorage  UserStorage
+	TokenStorage TokenStorage
 }

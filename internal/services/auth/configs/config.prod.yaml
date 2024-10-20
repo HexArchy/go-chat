@@ -1,29 +1,34 @@
 logging:
-  level: "${LOG_LEVEL}"
-  
+  level: "info"
+
 engines:
   storage:
-    url: "postgres://authuser:authpass@postgres:5432/authdb"
-    max_open_conns: 20
+    url: "postgresql://authuser:authpass@postgres:5432/authdb?sslmode=disable"
+    max_open_conns: 10
     max_idle_conns: 5
-    conn_max_lifetime: 1h
+    conn_max_lifetime: "1h"
+
+vault:
+  address: "http://vault:8200"
+  token: "my-vault-token"
+  path: "secret/auth"
+  timeout: "5m"
 
 auth:
   jwt:
-    access_secret: "${JWT_ACCESS_SECRET}"
-    refresh_secret: "${JWT_REFRESH_SECRET}"
+    access_secret: "secret"
+    refresh_secret: "secret"
     access_expiry_hours: 1
-    refresh_expiry_hours: 168 
-
-vault:
-  address: "${VAULT_ADDR}"
-  token: "${VAULT_TOKEN}"
-  path: "secret/auth-service"
-  timeout: 5m
+    refresh_expiry_hours: 168
 
 handlers:
   http:
-    read_timeout: 10s
-    write_timeout: 10s
+    read_timeout: "10s"
+    write_timeout: "10s"
     address: "0.0.0.0"
-    port: "${AUTH_SERVICE_PORT}"
+    port: "8080"
+  grpc:
+    address: "0.0.0.0"
+    port: "9090"
+
+graceful_shutdown: "30s"

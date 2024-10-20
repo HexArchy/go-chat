@@ -12,36 +12,12 @@ func NewLogger(level string) (*zap.Logger, error) {
 		return nil, err
 	}
 
-	config := zap.Config{
-		Level:             zap.NewAtomicLevelAt(zapLevel),
-		Development:       false,
-		DisableCaller:     false,
-		DisableStacktrace: false,
-		Sampling:          nil,
-		Encoding:          "json",
-		EncoderConfig:     zap.NewProductionEncoderConfig(),
-		OutputPaths:       []string{"stderr"},
-		ErrorOutputPaths:  []string{"stderr"},
-	}
-
-	switch zapLevel {
-	case zap.DebugLevel:
-		config.Development = true
-		config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-		config.OutputPaths = []string{"stdout"}
-
-	case zap.InfoLevel:
-		config.DisableCaller = true
-		config.DisableStacktrace = true
-
-	case zap.WarnLevel:
-		config.DisableCaller = false
-		config.DisableStacktrace = true
-
-	case zap.ErrorLevel:
-		config.DisableCaller = false
-		config.DisableStacktrace = false
-	}
+	config := zap.NewProductionConfig()
+	config.Level = zap.NewAtomicLevelAt(zapLevel)
+	config.Encoding = "console"
+	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	config.OutputPaths = []string{"stdout"}
 
 	return config.Build()
 }

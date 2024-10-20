@@ -4,58 +4,32 @@ import (
 	"context"
 
 	"github.com/HexArch/go-chat/internal/services/auth/internal/entities"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 )
 
 type UseCase struct {
-	authService AuthService
-	authStorage AuthStorage
-	rbac        RBAC
+	userService UserService
 }
 
-func New(authService AuthService, authStorage AuthStorage, rbac RBAC) *UseCase {
+func New(deps Deps) *UseCase {
 	return &UseCase{
-		authService: authService,
-		authStorage: authStorage,
-		rbac:        rbac,
+		userService: deps.UserService,
 	}
 }
 
-func (uc *UseCase) Execute(ctx context.Context, userIDToDelete string, deleterID string) error {
-	// Get the deleter's authenticated user information.
-	deleter, err := uc.authStorage.GetUserByID(ctx, deleterID)
+func (uc *UseCase) Execute(ctx context.Context, requesterID, targetUserID uuid.UUID) error {
+	hasPermission, err := uc.userService.CheckPermission(ctx, requesterID, "admin")
 	if err != nil {
-		return errors.Wrap(err, "failed to get deleter user")
+		return errors.Wrap(err, "failed to check permissions")
 	}
 
-	// Check if the deleter has permission to delete the user.
-	if deleter.ID != userIDToDelete && !uc.rbac.CheckPermission(deleter.Roles, "delete", "user") {
-		return errors.Wrap(entities.ErrForbidden, "user does not have permission to delete this user")
+	if !hasPermission && requesterID != targetUserID {
+		return entities.ErrPermissionDenied
 	}
 
-	// Get the user to be deleted.
-	userToDelete, err := uc.authStorage.GetUserByID(ctx, userIDToDelete)
-	if err != nil {
-		return errors.Wrap(err, "failed to get user to delete")
-	}
-
-	if userToDelete == nil {
-		return errors.Wrap(entities.ErrUserNotFound, "user to delete not found")
-	}
-
-	// Check if trying to delete an admin (optional, depending on your requirements).
-	if uc.rbac.CheckPermission(userToDelete.Roles, "admin", "system") && !uc.rbac.CheckPermission(deleter.Roles, "super_admin", "system") {
-		return errors.Wrap(entities.ErrForbidden, "cannot delete an admin user without super admin privileges")
-	}
-
-	// Delete user from storage.
-	if err := uc.authStorage.DeleteUser(ctx, userIDToDelete); err != nil {
+	if err := uc.userService.DeleteUser(ctx, targetUserID); err != nil {
 		return errors.Wrap(err, "failed to delete user")
-	}
-
-	// Revoke all refresh tokens for the deleted user.
-	if err := uc.authService.RevokeAllRefreshTokens(ctx, userIDToDelete); err != nil {
-		return errors.Wrap(err, "failed to revoke refresh tokens")
 	}
 
 	return nil

@@ -1,8 +1,8 @@
 package config
 
 import (
-	"flag"
 	"log"
+	"net"
 	"strings"
 	"time"
 
@@ -57,6 +57,7 @@ type JWTConfig struct {
 
 type HandlersConfig struct {
 	HTTP HTTPConfig `koanf:"http"`
+	GRPC GRPCConfig `koanf:"grpc"`
 }
 
 type HTTPConfig struct {
@@ -66,40 +67,38 @@ type HTTPConfig struct {
 	Port         string        `koanf:"port"`
 }
 
+type GRPCConfig struct {
+	Address string `koanf:"address"`
+	Port    string `koanf:"port"`
+}
+
 type LoggingConfig struct {
 	Level string `koanf:"level"`
 }
 
-func LoadConfig() (*Config, error) {
-	// Define a flag for the config file path.
-	configPath := flag.String("config", "configs/config.local.yaml", "Path to the configuration file")
-	flag.Parse()
-
-	// Load default values.
+func LoadConfig(configPath string) (*Config, error) {
 	if err := loadDefaults(); err != nil {
 		return nil, errors.Wrap(err, "load defaults")
 	}
 
-	// Load from YAML file.
-	if err := k.Load(file.Provider(*configPath), yaml.Parser()); err != nil {
+	if err := k.Load(file.Provider(configPath), yaml.Parser()); err != nil {
 		log.Printf("Error loading from YAML file: %v", err)
 	}
 
-	// Load from environment variables.
 	if err := k.Load(env.Provider("AUTH_", ".", func(s string) string {
-		return strings.Replace(strings.ToLower(s), "_", ".", -1)
+		return strings.Replace(strings.ToLower(
+			strings.TrimPrefix(s, "AUTH_")), "_", ".", -1)
 	}), nil); err != nil {
 		return nil, errors.Wrap(err, "loading environment variables")
 	}
 
-	// Load secrets from Vault if configured.
 	if k.Exists("vault.address") && k.Exists("vault.token") {
 		vaultProvider := vault.Provider(
 			vault.Config{
-				Address: k.String("engines.vault.address"),
-				Token:   k.String("engines.vault.token"),
-				Path:    k.String("engines.vault.path"),
-				Timeout: k.Duration("engines.vault.timeout"),
+				Address: k.String("vault.address"),
+				Token:   k.String("vault.token"),
+				Path:    k.String("vault.path"),
+				Timeout: k.Duration("vault.timeout"),
 			},
 		)
 		if err := k.Load(vaultProvider, nil); err != nil {
@@ -109,7 +108,6 @@ func LoadConfig() (*Config, error) {
 		if accessSecret := k.String("vault.data.access_secret"); accessSecret != "" {
 			k.Set("auth.jwt.access_secret", accessSecret)
 		}
-
 		if refreshSecret := k.String("vault.data.refresh_secret"); refreshSecret != "" {
 			k.Set("auth.jwt.refresh_secret", refreshSecret)
 		}
@@ -128,15 +126,26 @@ func loadDefaults() error {
 		"engines.storage.max_open_conns":    10,
 		"engines.storage.max_idle_conns":    5,
 		"engines.storage.conn_max_lifetime": time.Hour,
-		"engines.vault.timeout":             5 * time.Minute,
+		"vault.timeout":                     5 * time.Minute,
 		"auth.jwt.access_expiry_hours":      1,
-		"auth.jwt.refresh_expiry_hours":     24 * 7,
+		"auth.jwt.refresh_expiry_hours":     168,
 		"logging.level":                     "info",
 		"handlers.http.read_timeout":        10 * time.Second,
 		"handlers.http.write_timeout":       10 * time.Second,
 		"handlers.http.address":             "localhost",
 		"handlers.http.port":                "8080",
+		"handlers.grpc.address":             "localhost",
+		"handlers.grpc.port":                "9090",
+		"graceful_shutdown":                 15 * time.Second,
 	}
 
 	return k.Load(confmap.Provider(defaults, "."), nil)
+}
+
+func (h *HTTPConfig) FullAddress() string {
+	return net.JoinHostPort(h.Address, h.Port)
+}
+
+func (g *GRPCConfig) FullAddress() string {
+	return net.JoinHostPort(g.Address, g.Port)
 }

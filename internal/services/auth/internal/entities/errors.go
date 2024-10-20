@@ -2,21 +2,14 @@ package entities
 
 import "errors"
 
-var ErrInvalidCredantials = errors.New("invalid credentials")
-
 var (
-	ErrInvalidTokenType      = errors.New("invalid token type")
-	ErrInvalidRefreshToken   = errors.New("invalid refresh token")
-	ErrInvalidRole           = errors.New("invalid role")
-	ErrInvalidPasswordFormat = errors.New("invalid password format")
-	ErrInvalidPassword       = errors.New("invalid password")
-	ErrInvalidToken          = errors.New("invalid token")
-)
-
-var (
-	ErrInvalidInput      = errors.New("invalid input")
-	ErrUserAlreadyExists = errors.New("user already exists")
-	ErrUserNotFound      = errors.New("user not found")
-	ErrUnauthorized      = errors.New("unauthorized")
-	ErrForbidden         = errors.New("forbidden")
+	ErrUserNotFound        = errors.New("user not found")
+	ErrTokenNotFound       = errors.New("token not found")
+	ErrInvalidCredentials  = errors.New("invalid credentials")
+	ErrInvalidTokenClaims  = errors.New("invalid token claims")
+	ErrRefreshTokenExpired = errors.New("refresh token expired")
+	ErrUserAlreadyExists   = errors.New("email already in use")
+	ErrPasswordValidation  = errors.New("password validation failed")
+	ErrInvalidEmailFormat  = errors.New("invalid email format")
+	ErrPermissionDenied    = errors.New("permission denied")
 )

@@ -4,17 +4,14 @@ import (
 	"context"
 
 	"github.com/HexArch/go-chat/internal/services/auth/internal/entities"
+	"github.com/google/uuid"
 )
 
-type AuthService interface {
-	RevokeAllRefreshTokens(ctx context.Context, userID string) error
+type UserService interface {
+	DeleteUser(ctx context.Context, userID uuid.UUID) error
+	CheckPermission(ctx context.Context, userID uuid.UUID, permission entities.Permission) (bool, error)
 }
 
-type AuthStorage interface {
-	GetUserByID(ctx context.Context, id string) (*entities.User, error)
-	DeleteUser(ctx context.Context, id string) error
-}
-
-type RBAC interface {
-	CheckPermission(roles []entities.Role, action, resource string) bool
+type Deps struct {
+	UserService UserService
 }

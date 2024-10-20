@@ -2,10 +2,12 @@ package refreshtoken
 
 import (
 	"context"
-
-	"github.com/HexArch/go-chat/internal/services/auth/internal/entities"
 )
 
 type AuthService interface {
-	RefreshTokens(ctx context.Context, refreshToken string) (entities.AuthenticatedUser, error)
+	RefreshToken(ctx context.Context, refreshToken string) (newAccessToken string, newRefreshToken string, err error)
+}
+
+type Deps struct {
+	AuthService AuthService
 }

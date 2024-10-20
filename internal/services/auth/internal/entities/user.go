@@ -1,87 +1,86 @@
 package entities
 
 import (
-	"errors"
+	"regexp"
 	"time"
-)
+	"unicode"
 
-type Role string
-
-const (
-	RoleUser      Role = "user"
-	RoleModerator Role = "moderator"
-	RoleAdmin     Role = "admin"
+	"github.com/google/uuid"
+	"github.com/pkg/errors"
 )
 
 type User struct {
-	ID          string
+	ID          uuid.UUID
 	Email       string
 	Password    string
-	Name        string
-	Nickname    string
-	PhoneNumber string
+	Username    string
+	Phone       string
 	Age         int
 	Bio         string
-	Roles       []Role
+	Permissions []Permission
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
 
-func (u *User) Validate() error {
-	if u.Email == "" {
-		return errors.New("email is required")
-	}
-	if u.Name == "" {
-		return errors.New("name is required")
-	}
-	if u.Age < 16 {
-		return errors.New("user must be at least 16 years old")
-	}
+type Permission string
 
+const (
+	PermissionRead   Permission = "read"
+	PermissionWrite  Permission = "write"
+	PermissionDelete Permission = "delete"
+	PermissionAdmin  Permission = "admin"
+)
+
+var emailRegex = regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,4}$`)
+
+func (u *User) ValidateEmail() error {
+	if !emailRegex.MatchString(u.Email) {
+		return ErrInvalidEmailFormat
+	}
 	return nil
 }
 
-type AuthenticatedUser struct {
-	UserID    string
-	Name      string
-	Email     string
-	Nickname  string
-	Age       int
-	Bio       string
-	Roles     []Role
-	ExpiresAt time.Time
-	TokenPair TokenPair
-}
+func (u *User) ValidatePassword() error {
+	var (
+		hasMinLen  = false
+		hasUpper   = false
+		hasLower   = false
+		hasNumber  = false
+		hasSpecial = false
+	)
 
-func (u *User) HasRole(role Role) bool {
-	for _, r := range u.Roles {
-		if r == role {
-			return true
+	if len(u.Password) >= 8 {
+		hasMinLen = true
+	}
+
+	for _, char := range u.Password {
+		switch {
+		case unicode.IsUpper(char):
+			hasUpper = true
+		case unicode.IsLower(char):
+			hasLower = true
+		case unicode.IsDigit(char):
+			hasNumber = true
+		case unicode.IsPunct(char) || unicode.IsSymbol(char):
+			hasSpecial = true
 		}
 	}
-	return false
-}
 
-func (u *User) AddRole(role Role) {
-	if !u.HasRole(role) {
-		u.Roles = append(u.Roles, role)
+	if !hasMinLen {
+		return errors.Wrap(ErrPasswordValidation, "password must be at least 8 characters long")
 	}
-}
+	if !hasUpper {
+		return errors.Wrap(ErrPasswordValidation, "password must have at least one uppercase letter")
+	}
+	if !hasLower {
+		return errors.Wrap(ErrPasswordValidation, "password must have at least one lowercase letter")
+	}
+	if !hasNumber {
+		return errors.Wrap(ErrPasswordValidation, "password must have at least one digit")
+	}
+	if !hasSpecial {
+		return errors.Wrap(ErrPasswordValidation, "password must have at least one special character")
+	}
 
-func (u *User) RemoveRole(role Role) {
-	for i, r := range u.Roles {
-		if r == role {
-			u.Roles = append(u.Roles[:i], u.Roles[i+1:]...)
-			return
-		}
-	}
-}
-
-func (au *AuthenticatedUser) HasRole(role Role) bool {
-	for _, r := range au.Roles {
-		if r == role {
-			return true
-		}
-	}
-	return false
+	return nil
 }

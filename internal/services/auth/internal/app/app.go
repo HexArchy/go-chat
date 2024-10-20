@@ -2,17 +2,25 @@ package app
 
 import (
 	"context"
-	"net/http"
+	"time"
 
 	"github.com/HexArch/go-chat/internal/pkg/graceful-shutdown"
-	"github.com/HexArch/go-chat/internal/pkg/logger"
 	"github.com/HexArch/go-chat/internal/services/auth/internal/config"
-	"github.com/HexArch/go-chat/internal/services/auth/internal/handlers/http/api"
+	"github.com/HexArch/go-chat/internal/services/auth/internal/controllers"
 	"github.com/HexArch/go-chat/internal/services/auth/internal/services/auth"
-	"github.com/HexArch/go-chat/internal/services/auth/internal/services/rbac"
+	tokenstorage "github.com/HexArch/go-chat/internal/services/auth/internal/services/auth/storage"
+	"github.com/HexArch/go-chat/internal/services/auth/internal/services/user"
+	userstorage "github.com/HexArch/go-chat/internal/services/auth/internal/services/user/storage"
 
-	authStorage "github.com/HexArch/go-chat/internal/services/auth/internal/services/auth/storage"
-	usecases "github.com/HexArch/go-chat/internal/services/auth/internal/use-cases"
+	createuser "github.com/HexArch/go-chat/internal/services/auth/internal/use-cases/create-user"
+	deleteuser "github.com/HexArch/go-chat/internal/services/auth/internal/use-cases/delete-user"
+	getuser "github.com/HexArch/go-chat/internal/services/auth/internal/use-cases/get-user"
+	getusers "github.com/HexArch/go-chat/internal/services/auth/internal/use-cases/get-users"
+	"github.com/HexArch/go-chat/internal/services/auth/internal/use-cases/login"
+	"github.com/HexArch/go-chat/internal/services/auth/internal/use-cases/logout"
+	refreshtoken "github.com/HexArch/go-chat/internal/services/auth/internal/use-cases/refresh-token"
+	updateuser "github.com/HexArch/go-chat/internal/services/auth/internal/use-cases/update-user"
+	"github.com/HexArch/go-chat/internal/services/auth/internal/use-cases/validatetoken"
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -21,89 +29,93 @@ import (
 )
 
 type App struct {
-	// Utils.
 	cfg        *config.Config
 	logger     *zap.Logger
 	grShutdown *graceful.Shutdown
 
-	// Core.
-	httpServer *http.Server
-
-	// Storages.
-	authStorage *authStorage.Storage
-
-	// Services.
-	authService *auth.AuthService
-	rbac        *rbac.RBAC
-
-	// Handlers.
-	apiHandler *api.Handler
-
-	// UseCases.
-	useCases *usecases.UseCases
+	server *controllers.Server
 }
 
-func Start(ctx context.Context) (err error) {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return errors.Wrap(err, "load config")
-	}
-
-	logger, err := logger.NewLogger(cfg.Logging.Level)
-	if err != nil {
-		return err
-	}
-
-	shutdown := graceful.NewShutdown(logger)
-
+func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, error) {
 	db, err := gorm.Open(postgres.Open(cfg.Engines.Storage.URL), &gorm.Config{})
 	if err != nil {
-		return errors.Wrap(err, "failed to connect to database")
+		return nil, errors.Wrap(err, "failed to connect to database")
 	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		return errors.Wrap(err, "failed to get database connection")
+		return nil, errors.Wrap(err, "failed to get database connection")
 	}
 
 	sqlDB.SetMaxOpenConns(cfg.Engines.Storage.MaxOpenConns)
 	sqlDB.SetMaxIdleConns(cfg.Engines.Storage.MaxIdleConns)
 	sqlDB.SetConnMaxLifetime(cfg.Engines.Storage.ConnMaxLifetime)
 
-	sqlDB.SetMaxOpenConns(cfg.Engines.Storage.MaxOpenConns)
-	sqlDB.SetMaxIdleConns(cfg.Engines.Storage.MaxIdleConns)
-	sqlDB.SetConnMaxLifetime(cfg.Engines.Storage.ConnMaxLifetime)
+	userStorage := userstorage.New(db)
+	tokenStorage := tokenstorage.New(db)
 
-	rbacService := rbac.NewRBAC()
+	userService := user.NewService(user.Deps{UserStorage: userStorage})
 
-	authStorage := authStorage.NewStorage(db)
-	authService := auth.NewAuthService(
-		authStorage,
-		rbacService,
-		cfg.Auth.JWT.AccessSecret,
-		cfg.Auth.JWT.RefreshSecret,
-		cfg.Auth.JWT.AccessExpiryHours,
-		cfg.Auth.JWT.RefreshExpiryHours,
+	authService := auth.NewService(
+		auth.Deps{
+			UserStorage:  userStorage,
+			TokenStorage: tokenStorage,
+		},
+		[]byte(cfg.Auth.JWT.AccessSecret),
+		[]byte(cfg.Auth.JWT.RefreshSecret),
+		cfg.Auth.JWT.AccessExpiryHours*time.Hour,
+		cfg.Auth.JWT.RefreshExpiryHours*time.Hour,
 	)
 
-	useCases := usecases.NewUseCases(authService, authStorage, rbacService)
-	apiHandler, err := api.NewHandler(logger, useCases)
-	if err != nil {
-		return errors.Wrap(err, "failed to start api server")
+	createUserUC := createuser.New(createuser.Deps{UserService: userService})
+	loginUC := login.New(login.Deps{AuthService: authService})
+	refreshTokenUC := refreshtoken.New(refreshtoken.Deps{AuthService: authService})
+	validateTokenUC := validatetoken.New(validatetoken.Deps{AuthService: authService})
+	logoutUC := logout.New(logout.Deps{AuthService: authService})
+	getUserUC := getuser.New(getuser.Deps{UserService: userService})
+	getUsersUC := getusers.New(getusers.Deps{UserService: userService})
+	updateUserUC := updateuser.New(updateuser.Deps{UserService: userService})
+	deleteUserUC := deleteuser.New(deleteuser.Deps{UserService: userService})
+
+	// Инициализируем контроллеры
+	authServiceServer := controllers.NewAuthServiceServer(
+		createUserUC,
+		loginUC,
+		refreshTokenUC,
+		validateTokenUC,
+		logoutUC,
+		getUserUC,
+		getUsersUC,
+		updateUserUC,
+		deleteUserUC,
+	)
+
+	grShutdown := graceful.NewShutdown(logger)
+
+	server := controllers.NewServer(logger, cfg, authServiceServer, []byte(cfg.Auth.JWT.AccessSecret), validateTokenUC)
+
+	return &App{
+		cfg:        cfg,
+		logger:     logger,
+		grShutdown: grShutdown,
+		server:     server,
+	}, nil
+}
+
+func (a *App) Start(ctx context.Context) {
+	go func() {
+		if err := a.server.Start(ctx); err != nil {
+			a.logger.Fatal("Failed to start server", zap.Error(err))
+		}
+	}()
+
+	if err := a.grShutdown.Wait(a.cfg.GracefulShutdown); err != nil {
+		a.logger.Error("Error during graceful shutdown", zap.Error(err))
+	} else {
+		a.logger.Info("Application gracefully stopped")
 	}
+}
 
-	app := &App{
-		cfg:         cfg,
-		logger:      logger,
-		grShutdown:  shutdown,
-		authStorage: authStorage,
-		authService: authService,
-		rbac:        rbacService,
-		apiHandler:  apiHandler,
-		useCases:    useCases,
-	}
-
-	app.start(ctx)
-
-	return nil
+func (a *App) Stop(ctx context.Context) error {
+	return a.server.Stop(ctx)
 }
