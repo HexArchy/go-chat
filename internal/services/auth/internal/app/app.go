@@ -92,7 +92,7 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 
 	grShutdown := graceful.NewShutdown(logger)
 
-	server := controllers.NewServer(logger, cfg, authServiceServer, []byte(cfg.Auth.JWT.AccessSecret), validateTokenUC)
+	server := controllers.NewServer(logger, cfg, authServiceServer, []byte(cfg.Auth.JWT.AccessSecret), validateTokenUC, cfg.Auth.ServiceToken)
 
 	return &App{
 		cfg:        cfg,

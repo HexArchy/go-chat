@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/HexArch/go-chat/internal/services/auth/internal/use-cases/validatetoken"
+	"github.com/HexArch/go-chat/internal/services/website/internal/clients/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -15,14 +15,14 @@ type userKeyType string
 
 const userIDKey userKeyType = "userID"
 
-func AuthInterceptor(jwtSecret []byte, validateTokenUC *validatetoken.UseCase, serviceToken string) grpc.UnaryServerInterceptor {
+func AuthInterceptor(authClient *auth.AuthClient) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req interface{},
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (interface{}, error) {
-		if info.FullMethod == "/auth.AuthService/Login" || info.FullMethod == "/auth.AuthService/RegisterUser" {
+		if info.FullMethod == "/website.RoomService/CreateRoom" {
 			return handler(ctx, req)
 		}
 
@@ -38,16 +38,12 @@ func AuthInterceptor(jwtSecret []byte, validateTokenUC *validatetoken.UseCase, s
 			return nil, status.Errorf(codes.Unauthenticated, "authorization token is not provided")
 		}
 
-		if token == serviceToken {
-			return handler(ctx, req)
-		}
-
-		user, err := validateTokenUC.Execute(ctx, token)
+		user, err := authClient.ValidateToken(ctx, token)
 		if err != nil {
 			return nil, status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
 		}
 
-		ctx = context.WithValue(ctx, userIDKey, user.ID)
+		ctx = context.WithValue(ctx, userIDKey, user.Id)
 
 		return handler(ctx, req)
 	}

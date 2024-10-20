@@ -2,7 +2,7 @@
   "swagger": "2.0",
   "info": {
     "title": "internal/api/proto/auth/auth.proto",
-    "version": "version not set"
+    "version": "1"
   },
   "host": "localhost:8080",
   "basePath": "/",

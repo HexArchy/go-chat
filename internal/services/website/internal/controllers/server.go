@@ -6,10 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/HexArch/go-chat/internal/api/generated/go-chat/api/proto/auth"
-	"github.com/HexArch/go-chat/internal/services/auth/internal/config"
-	"github.com/HexArch/go-chat/internal/services/auth/internal/use-cases/validatetoken"
-
+	"github.com/HexArch/go-chat/internal/api/generated/go-chat/api/proto/website"
+	"github.com/HexArch/go-chat/internal/services/website/internal/clients/auth"
+	"github.com/HexArch/go-chat/internal/services/website/internal/config"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/rs/cors"
 	"go.uber.org/zap"
@@ -18,27 +17,25 @@ import (
 )
 
 type Server struct {
-	grpcServer      *grpc.Server
-	httpServer      *http.Server
-	logger          *zap.Logger
-	cfg             *config.Config
-	authSvc         *AuthServiceServer
-	validateTokenUC *validatetoken.UseCase
-	jwtSecret       []byte
-	serviceToken    string
+	grpcServer *grpc.Server
+	httpServer *http.Server
+	logger     *zap.Logger
+	cfg        *config.Config
+	websiteSvc *WebsiteServiceServer
+	authClient *auth.AuthClient
 }
 
-func NewServer(logger *zap.Logger, cfg *config.Config, authSvc *AuthServiceServer, jwtSecret []byte, validateTokenUC *validatetoken.UseCase, serviceToken string) *Server {
+// NewServer initializes a new Server for the website microservice.
+func NewServer(logger *zap.Logger, cfg *config.Config, websiteSvc *WebsiteServiceServer, authClient *auth.AuthClient) *Server {
 	return &Server{
-		logger:          logger,
-		cfg:             cfg,
-		authSvc:         authSvc,
-		jwtSecret:       jwtSecret,
-		validateTokenUC: validateTokenUC,
-		serviceToken:    serviceToken,
+		logger:     logger,
+		cfg:        cfg,
+		websiteSvc: websiteSvc,
+		authClient: authClient,
 	}
 }
 
+// Start launches the gRPC and HTTP servers.
 func (s *Server) Start(ctx context.Context) error {
 	grpcAddress := s.cfg.Handlers.GRPC.FullAddress()
 	httpAddress := s.cfg.Handlers.HTTP.FullAddress()
@@ -49,9 +46,9 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	s.grpcServer = grpc.NewServer(
-		grpc.UnaryInterceptor(AuthInterceptor(s.jwtSecret, s.authSvc.validateTokenUC, s.serviceToken)),
+		grpc.UnaryInterceptor(AuthInterceptor(s.authClient)),
 	)
-	auth.RegisterAuthServiceServer(s.grpcServer, s.authSvc)
+	website.RegisterRoomServiceServer(s.grpcServer, s.websiteSvc)
 
 	go func() {
 		s.logger.Info("Starting gRPC server", zap.String("address", grpcAddress))
@@ -60,6 +57,7 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 	}()
 
+	// HTTP server for gRPC-Gateway
 	mux := runtime.NewServeMux()
 
 	c := cors.New(cors.Options{
@@ -72,7 +70,7 @@ func (s *Server) Start(ctx context.Context) error {
 	handler := c.Handler(mux)
 
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
-	if err := auth.RegisterAuthServiceHandlerFromEndpoint(ctx, mux, grpcAddress, opts); err != nil {
+	if err := website.RegisterRoomServiceHandlerFromEndpoint(ctx, mux, grpcAddress, opts); err != nil {
 		return err
 	}
 
@@ -91,6 +89,7 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
+// Stop gracefully shuts down the gRPC and HTTP servers.
 func (s *Server) Stop(ctx context.Context) error {
 	s.grpcServer.GracefulStop()
 	ctxShutdown, cancel := context.WithTimeout(ctx, 5*time.Second)

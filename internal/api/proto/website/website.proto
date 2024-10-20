@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package website;
+
+option go_package = "go-chat/api/proto/website";
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// Message representing a Room entity.
+message Room {
+  string id = 1;
+  string name = 2;
+  string owner_id = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+// Request to create a room.
+message CreateRoomRequest {
+  string name = 1;
+  string owner_id = 2;
+}
+
+// Response after creating a room.
+message CreateRoomResponse {
+  Room room = 1;
+}
+
+// Request to get a room by ID.
+message GetRoomRequest {
+  string room_id = 1;
+}
+
+// Request to get rooms by owner ID.
+message GetOwnerRoomsRequest {
+  string owner_id = 1;
+}
+
+// Request to search rooms by name.
+message SearchRoomsRequest {
+  string name = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+// Response containing multiple rooms.
+message RoomsResponse {
+  repeated Room rooms = 1;
+}
+
+// Request to delete a room by ID.
+message DeleteRoomRequest {
+  string room_id = 1;
+  string owner_id = 2;
+}
+
+// The RoomService defines the Room-related operations.
+service RoomService {
+  // Create a new room
+  rpc CreateRoom(CreateRoomRequest) returns (CreateRoomResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/rooms"
+      body: "*"
+    };
+  }
+
+  // Get a room by its ID
+  rpc GetRoom(GetRoomRequest) returns (Room) {
+    option (google.api.http) = {
+      get: "/api/v1/rooms/{room_id}"
+    };
+  }
+
+  // Get rooms by owner ID
+  rpc GetOwnerRooms(GetOwnerRoomsRequest) returns (RoomsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/users/{owner_id}/rooms"
+    };
+  }
+
+  // Search for rooms by name
+  rpc SearchRooms(SearchRoomsRequest) returns (RoomsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/rooms/search"
+    };
+  }
+
+  // Delete a room by ID
+  rpc DeleteRoom(DeleteRoomRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/v1/rooms/{room_id}"
+    };
+  }
+}

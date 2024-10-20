@@ -7,7 +7,7 @@ services:
       dockerfile: internal/services/auth/Dockerfile
     environment:
       - AUTH_LOGGING_LEVEL=info
-      - AUTH_ENGINES_STORAGE_URL=postgresql://authuser:authpass@postgres:5432/authdb?sslmode=disable
+      - AUTH_ENGINES_STORAGE_URL=postgresql://gochatuser:gochatpass@postgres:5432/gochat?sslmode=disable
       - AUTH_VAULT_ADDRESS=http://vault:8200
       - AUTH_VAULT_TOKEN=my-vault-token
       - AUTH_HANDLERS_HTTP_ADDRESS=0.0.0.0
@@ -29,18 +29,47 @@ services:
       - "8080:8080"
       - "9090:9090"
 
+  website-service:
+    build:
+      context: .
+      dockerfile: internal/services/website/Dockerfile
+    environment:
+      - WEBSITE_LOGGING_LEVEL=info
+      - WEBSITE_ENGINES_STORAGE_URL=postgresql://gochatuser:gochatpass@postgres:5432/gochat?sslmode=disable
+      - WEBSITE_VAULT_ADDRESS=http://vault:8200
+      - WEBSITE_VAULT_TOKEN=my-vault-token
+      - WEBSITE_HANDLERS_HTTP_ADDRESS=0.0.0.0
+      - WEBSITE_HANDLERS_HTTP_PORT=8081
+      - WEBSITE_ENGINES_STORAGE_MAX_OPEN_CONNS=10
+      - WEBSITE_ENGINES_STORAGE_MAX_IDLE_CONNS=5
+      - WEBSITE_ENGINES_STORAGE_CONN_MAX_LIFETIME=1h
+      - WEBSITE_VAULT_PATH=secret/website
+      - WEBSITE_VAULT_TIMEOUT=5m
+      - WEBSITE_AUTH_SERVICE_ADDRESS=http://auth-service:9090
+    depends_on:
+      website-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      vault-setup:
+        condition: service_completed_successfully
+
+    ports:
+      - "8081:8081"
+      - "9091:9091"
+
   postgres:
     image: postgres:15-alpine
     environment:
-      - POSTGRES_DB=authdb
-      - POSTGRES_USER=authuser
-      - POSTGRES_PASSWORD=authpass
+      - POSTGRES_DB=gochat
+      - POSTGRES_USER=gochatuser
+      - POSTGRES_PASSWORD=gochatpass
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U authuser -d authdb"]
+      test: ["CMD-SHELL", "pg_isready -U gochatuser -d gochat"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -77,7 +106,7 @@ services:
       /bin/sh -c "
         sleep 10;
         vault login my-vault-token;
-        vault kv put secret/auth access_secret=secret refresh_secret=secret;
+        vault kv put secret/auth access_secret=secret refresh_secret=secret service_token=secret;
       "
 
   migrate:
@@ -86,7 +115,7 @@ services:
       dockerfile: internal/services/auth/Dockerfile
     entrypoint: ["./migrate", "-config", "./configs/config.prod.yaml"]
     environment:
-      - AUTH_ENGINES_STORAGE_URL=postgresql://authuser:authpass@postgres:5432/authdb?sslmode=disable
+      - AUTH_ENGINES_STORAGE_URL=postgresql://gochatuser:gochatpass@postgres:5432/gochat?sslmode=disable
       - AUTH_VAULT_ADDRESS=http://vault:8200
       - AUTH_VAULT_TOKEN=my-vault-token
       - AUTH_VAULT_PATH=secret/auth
@@ -98,14 +127,37 @@ services:
       vault-setup:
         condition: service_completed_successfully
 
+  website-migrate:
+    build:
+      context: .
+      dockerfile: internal/services/website/Dockerfile
+    entrypoint: ["./migrate", "-config", "./configs/config.prod.yaml"]
+    environment:
+      - WEBSITE_ENGINES_STORAGE_URL=postgresql://gochatuser:gochatpass@postgres:5432/gochat?sslmode=disable
+      - WEBSITE_VAULT_ADDRESS=http://vault:8200
+      - WEBSITE_VAULT_TOKEN=my-vault-token
+      - WEBSITE_VAULT_PATH=secret/website
+      - WEBSITE_VAULT_TIMEOUT=5m
+      - WEBSITE_LOGGING_LEVEL=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault-setup:
+        condition: service_completed_successfully
+
   swagger-ui:
     image: swaggerapi/swagger-ui
     environment:
-      SWAGGER_JSON: /swagger/auth.swagger.json
+      - SWAGGER_JSON=/swagger/auth.swagger.json
+      - URLS[0].url=/swagger/auth.swagger.json
+      - URLS[0].name=Auth API
+      - URLS[1].url=/swagger/website.swagger.json
+      - URLS[1].name=Website API
     volumes:
       - ./internal/api/generated/internal/api/proto/auth/auth.swagger.json:/swagger/auth.swagger.json
+      - ./internal/api/generated/internal/api/proto/website/website.swagger.json:/swagger/website.swagger.json
     ports:
-      - "8081:8080"
+      - "8082:8080"
 
 volumes:
   postgres-data:

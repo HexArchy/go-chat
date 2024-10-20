@@ -18,12 +18,12 @@ import (
 var k = koanf.New(".")
 
 type Config struct {
-	Engines          EnginesConfig  `koanf:"engines"`
-	Auth             AuthConfig     `koanf:"auth"`
-	Logging          LoggingConfig  `koanf:"logging"`
-	Vault            VaultConfig    `koanf:"vault"`
-	Handlers         HandlersConfig `koanf:"handlers"`
-	GracefulShutdown time.Duration  `koanf:"graceful_shutdown"`
+	Engines          EnginesConfig     `koanf:"engines"`
+	Logging          LoggingConfig     `koanf:"logging"`
+	Handlers         HandlersConfig    `koanf:"handlers"`
+	AuthService      AuthServiceConfig `koanf:"auth_service"`
+	Vault            VaultConfig       `koanf:"vault"`
+	GracefulShutdown time.Duration     `koanf:"graceful_shutdown"`
 }
 
 type EnginesConfig struct {
@@ -37,23 +37,8 @@ type StorageConfig struct {
 	ConnMaxLifetime time.Duration `koanf:"conn_max_lifetime"`
 }
 
-type VaultConfig struct {
-	Address string        `koanf:"address"`
-	Token   string        `koanf:"token"`
-	Path    string        `koanf:"path"`
-	Timeout time.Duration `koanf:"timeout"`
-}
-
-type AuthConfig struct {
-	JWT          JWTConfig `koanf:"jwt"`
-	ServiceToken string    `koanf:"service_token"`
-}
-
-type JWTConfig struct {
-	AccessSecret       string        `koanf:"access_secret"`
-	RefreshSecret      string        `koanf:"refresh_secret"`
-	AccessExpiryHours  time.Duration `koanf:"access_expiry_hours"`
-	RefreshExpiryHours time.Duration `koanf:"refresh_expiry_hours"`
+type LoggingConfig struct {
+	Level string `koanf:"level"`
 }
 
 type HandlersConfig struct {
@@ -73,8 +58,16 @@ type GRPCConfig struct {
 	Port    string `koanf:"port"`
 }
 
-type LoggingConfig struct {
-	Level string `koanf:"level"`
+type AuthServiceConfig struct {
+	Address   string `koanf:"address"`
+	JWTSecret string `koanf:"jwt_secret"`
+}
+
+type VaultConfig struct {
+	Address string        `koanf:"address"`
+	Token   string        `koanf:"token"`
+	Path    string        `koanf:"path"`
+	Timeout time.Duration `koanf:"timeout"`
 }
 
 func LoadConfig(configPath string) (*Config, error) {
@@ -82,17 +75,20 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, errors.Wrap(err, "load defaults")
 	}
 
+	// Load the YAML config file
 	if err := k.Load(file.Provider(configPath), yaml.Parser()); err != nil {
 		log.Printf("Error loading from YAML file: %v", err)
 	}
 
-	if err := k.Load(env.Provider("AUTH_", ".", func(s string) string {
+	// Load environment variables with prefix WEBSITE_
+	if err := k.Load(env.Provider("WEBSITE_", ".", func(s string) string {
 		return strings.Replace(strings.ToLower(
-			strings.TrimPrefix(s, "AUTH_")), "_", ".", -1)
+			strings.TrimPrefix(s, "WEBSITE_")), "_", ".", -1)
 	}), nil); err != nil {
 		return nil, errors.Wrap(err, "loading environment variables")
 	}
 
+	// Load secrets from Vault if Vault is configured
 	if k.Exists("vault.address") && k.Exists("vault.token") {
 		vaultProvider := vault.Provider(
 			vault.Config{
@@ -102,18 +98,13 @@ func LoadConfig(configPath string) (*Config, error) {
 				Timeout: k.Duration("vault.timeout"),
 			},
 		)
+
 		if err := k.Load(vaultProvider, nil); err != nil {
 			log.Printf("Error loading secrets from Vault: %v", err)
 		}
 
-		if accessSecret := k.String("vault.data.access_secret"); accessSecret != "" {
-			k.Set("auth.jwt.access_secret", accessSecret)
-		}
-		if refreshSecret := k.String("vault.data.refresh_secret"); refreshSecret != "" {
-			k.Set("auth.jwt.refresh_secret", refreshSecret)
-		}
-		if serviceToken := k.String("vault.data.service_token"); serviceToken != "" {
-			k.Set("auth.service_token", serviceToken)
+		if jwtSecret := k.String("vault.data.jwt_secret"); jwtSecret != "" {
+			k.Set("auth_service.jwt_secret", jwtSecret)
 		}
 	}
 
@@ -130,9 +121,6 @@ func loadDefaults() error {
 		"engines.storage.max_open_conns":    10,
 		"engines.storage.max_idle_conns":    5,
 		"engines.storage.conn_max_lifetime": time.Hour,
-		"vault.timeout":                     5 * time.Minute,
-		"auth.jwt.access_expiry_hours":      1,
-		"auth.jwt.refresh_expiry_hours":     168,
 		"logging.level":                     "info",
 		"handlers.http.read_timeout":        10 * time.Second,
 		"handlers.http.write_timeout":       10 * time.Second,
@@ -140,6 +128,9 @@ func loadDefaults() error {
 		"handlers.http.port":                "8080",
 		"handlers.grpc.address":             "localhost",
 		"handlers.grpc.port":                "9090",
+		"auth_service.address":              "localhost:9091",
+		"auth_service.jwt_secret":           "your_jwt_secret_key",
+		"vault.timeout":                     5 * time.Minute,
 		"graceful_shutdown":                 15 * time.Second,
 	}
 

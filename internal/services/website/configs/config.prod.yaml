@@ -1,0 +1,31 @@
+logging:
+  level: "info"
+
+engines:
+  storage:
+    url: "postgresql://hexarch:5051170Qwe@localhost:5432/go_chat?sslmode=disable"
+    max_open_conns: 10
+    max_idle_conns: 5
+    conn_max_lifetime: "1h"
+
+vault:
+  address: "http://vault:8200"
+  token: "my-vault-token"
+  path: "secret/auth"
+  timeout: "5m"
+
+auth_service:
+  address: "http://auth-service:9090"  
+  jwt_secret: ""  
+
+handlers:
+  http:
+    read_timeout: "10s"
+    write_timeout: "10s"
+    address: "0.0.0.0"
+    port: "8081"
+  grpc:
+    address: "0.0.0.0"
+    port: "9091"
+
+graceful_shutdown: "30s"
