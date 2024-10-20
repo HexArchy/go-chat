@@ -8,7 +8,6 @@ import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
-// Сообщение пользователя
 message User {
   string id = 1;
   string email = 2;
@@ -21,7 +20,6 @@ message User {
   google.protobuf.Timestamp updated_at = 9;
 }
 
-// Запрос на регистрацию пользователя
 message RegisterUserRequest {
   string email = 1;
   string password = 2;
@@ -31,35 +29,29 @@ message RegisterUserRequest {
   string bio = 6;
 }
 
-// Запрос на вход
 message LoginRequest {
   string email = 1;
   string password = 2;
 }
 
-// Ответ на вход
 message LoginResponse {
   string access_token = 1;
   string refresh_token = 2;
 }
 
-// Запрос на обновление токена
 message RefreshTokenRequest {
   string refresh_token = 1;
 }
 
-// Ответ на обновление токена
 message RefreshTokenResponse {
   string access_token = 1;
   string refresh_token = 2;
 }
 
-// Запрос на получение пользователя
 message GetUserRequest {
   string user_id = 1;
 }
 
-// Запрос на обновление пользователя
 message UpdateUserRequest {
   string user_id = 1;
   string email = 2;
@@ -71,7 +63,6 @@ message UpdateUserRequest {
   repeated string permissions = 8;
 }
 
-// Запрос на удаление пользователя
 message DeleteUserRequest {
   string user_id = 1;
 }
@@ -87,7 +78,7 @@ message GetUsersRequest {
     repeated User users = 1;
   }
 
-// Определение AuthService
+
 service AuthService {
   rpc RegisterUser(RegisterUserRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {

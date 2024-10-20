@@ -1,28 +1,4 @@
-.PHONY: build run migrate docker-build docker-run docker-migrate up down swagger
-
-# Build the auth service binary
-build:
-	go build -o bin/auth-service ./internal/services/auth/cmd/auth/main.go
-
-# Run the auth service locally
-run:
-	go run ./internal/services/auth/cmd/auth/main.go -config ./internal/services/auth/configs/config.prod.yaml
-
-# Run migrations locally
-migrate:
-	go run ./internal/services/auth/cmd/migrate/main.go -config ./internal/services/auth/configs/config.prod.yaml
-
-# Docker build for the auth service
-docker-build:
-	docker build -t auth-service:local -f internal/services/auth/Dockerfile .
-
-# Run the auth service in Docker
-docker-run:
-	docker run --rm -p 8080:8080 -p 9090:9090 --name auth-service auth-service:local
-
-# Run migrations in Docker
-docker-migrate:
-	docker run --rm auth-service:local ./migrate -config ./configs/config.prod.yaml
+.PHONY: docker-migrate up down swagger gen gen-website gen-auth
 
 # Start all services with Docker Compose
 up:
@@ -35,3 +11,25 @@ down:
 # Start Swagger UI
 swagger:
 	docker-compose up swagger-ui
+
+# Generate
+gen: gen-website gen-auth
+
+gen-website:
+	protoc -I . \
+		-I $GOPATH/src \
+		-I $GOPATH/src/github.com/googleapis/api-common-protos \
+		--go_out=./internal/api/generated \
+		--go-grpc_out=./internal/api/generated \
+		--grpc-gateway_out=./internal/api/generated \
+		--openapiv2_out=./internal/api/generated \
+		internal/api/proto/website/website.proto
+gen-auth:
+	protoc -I . \
+		-I $GOPATH/src \
+		-I $GOPATH/src/github.com/googleapis/api-common-protos \
+		--go_out=./internal/api/generated \
+		--go-grpc_out=./internal/api/generated \
+		--grpc-gateway_out=./internal/api/generated \
+		--openapiv2_out=./internal/api/generated \
+		internal/api/proto/auth/auth.proto
