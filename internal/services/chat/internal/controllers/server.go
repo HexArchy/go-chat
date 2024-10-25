@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/HexArch/go-chat/internal/api/generated/go-chat/api/proto/website"
-	"github.com/HexArch/go-chat/internal/services/website/internal/clients/auth"
-	"github.com/HexArch/go-chat/internal/services/website/internal/config"
+	"github.com/HexArch/go-chat/internal/api/generated/go-chat/api/proto/chat"
+	"github.com/HexArch/go-chat/internal/services/chat/internal/config"
+	"github.com/gorilla/websocket"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/rs/cors"
 	"go.uber.org/zap"
@@ -21,21 +21,31 @@ type Server struct {
 	httpServer *http.Server
 	logger     *zap.Logger
 	cfg        *config.Config
-	websiteSvc *WebsiteServiceServer
-	authClient *auth.AuthClient
+	chatSvc    *ChatServiceServer
+	upgrader   websocket.Upgrader
 }
 
-// NewServer initializes a new Server for the website microservice.
-func NewServer(logger *zap.Logger, cfg *config.Config, websiteSvc *WebsiteServiceServer, authClient *auth.AuthClient) *Server {
+func NewServer(
+	logger *zap.Logger,
+	cfg *config.Config,
+	chatSvc *ChatServiceServer,
+) *Server {
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
+
 	return &Server{
-		logger:     logger,
-		cfg:        cfg,
-		websiteSvc: websiteSvc,
-		authClient: authClient,
+		logger:   logger,
+		cfg:      cfg,
+		chatSvc:  chatSvc,
+		upgrader: upgrader,
 	}
 }
 
-// Start launches the gRPC and HTTP servers.
 func (s *Server) Start(ctx context.Context) error {
 	grpcAddress := s.cfg.Handlers.GRPC.FullAddress()
 	httpAddress := s.cfg.Handlers.HTTP.FullAddress()
@@ -46,9 +56,9 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	s.grpcServer = grpc.NewServer(
-		grpc.UnaryInterceptor(AuthInterceptor(s.authClient)),
+		grpc.UnaryInterceptor(AuthInterceptor()),
 	)
-	website.RegisterRoomServiceServer(s.grpcServer, s.websiteSvc)
+	chat.RegisterChatServiceServer(s.grpcServer, s.chatSvc)
 
 	go func() {
 		s.logger.Info("Starting gRPC server", zap.String("address", grpcAddress))
@@ -57,7 +67,6 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 	}()
 
-	// HTTP server for gRPC-Gateway.
 	mux := runtime.NewServeMux()
 
 	c := cors.New(cors.Options{
@@ -67,16 +76,18 @@ func (s *Server) Start(ctx context.Context) error {
 		AllowCredentials: true,
 	})
 
-	handler := c.Handler(mux)
+	mainHandler := http.NewServeMux()
+	mainHandler.Handle("/api/", c.Handler(mux))
+	mainHandler.HandleFunc("/ws/chat/{room_id}", s.handleWebSocket)
 
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
-	if err := website.RegisterRoomServiceHandlerFromEndpoint(ctx, mux, grpcAddress, opts); err != nil {
+	if err := chat.RegisterChatServiceHandlerFromEndpoint(ctx, mux, grpcAddress, opts); err != nil {
 		return err
 	}
 
 	s.httpServer = &http.Server{
 		Addr:    httpAddress,
-		Handler: handler,
+		Handler: mainHandler,
 	}
 
 	go func() {
@@ -89,13 +100,23 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully shuts down the gRPC and HTTP servers.
 func (s *Server) Stop(ctx context.Context) error {
 	s.grpcServer.GracefulStop()
 	ctxShutdown, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+
 	if err := s.httpServer.Shutdown(ctxShutdown); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		s.logger.Error("Failed to upgrade connection", zap.Error(err))
+		return
+	}
+
+	s.chatSvc.HandleWebSocket(r.Context(), conn)
 }

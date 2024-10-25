@@ -75,12 +75,10 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, errors.Wrap(err, "load defaults")
 	}
 
-	// Load the YAML config file
 	if err := k.Load(file.Provider(configPath), yaml.Parser()); err != nil {
 		log.Printf("Error loading from YAML file: %v", err)
 	}
 
-	// Load environment variables with prefix WEBSITE_
 	if err := k.Load(env.Provider("WEBSITE_", ".", func(s string) string {
 		return strings.Replace(strings.ToLower(
 			strings.TrimPrefix(s, "WEBSITE_")), "_", ".", -1)
@@ -88,7 +86,6 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, errors.Wrap(err, "loading environment variables")
 	}
 
-	// Load secrets from Vault if Vault is configured
 	if k.Exists("vault.address") && k.Exists("vault.token") {
 		vaultProvider := vault.Provider(
 			vault.Config{

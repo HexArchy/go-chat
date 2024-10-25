@@ -5,6 +5,7 @@ go 1.22.1
 require (
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0
 	github.com/knadh/koanf v1.5.0
 	github.com/pkg/errors v0.9.1

@@ -1,0 +1,42 @@
+engines:
+  storage:
+    url: postgresql://gochatuser:gochatpass@postgres:5432/gochat?sslmode=disable
+    max_open_conns: 20
+    max_idle_conns: 10
+    conn_max_lifetime: 1h
+
+logging:
+  level: info
+
+handlers:
+  http:
+    read_timeout: 10s
+    write_timeout: 10s
+    address: "0.0.0.0"
+    port: "8082"
+  grpc:
+    address: "0.0.0.0"
+    port: "9092"
+
+auth_service:
+  address: "auth-service:9090"
+  service_token: "secret" # Будет получен из vault
+
+website_service:
+  address: "website-service:9091"
+  service_token: "secret" # Будет получен из vault
+
+websocket:
+  ping_interval: 30s
+  pong_wait: 60s
+  max_message_size: 4096 # 4KB
+  write_wait: 10s
+  message_queue_size: 256
+
+vault:
+  address: "http://vault:8200"
+  token: "my-vault-token"
+  path: "secret/chat"
+  timeout: 5m
+
+graceful_shutdown: 15s

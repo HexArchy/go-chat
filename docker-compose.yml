@@ -15,7 +15,7 @@ services:
       - AUTH_ENGINES_STORAGE_MAX_OPEN_CONNS=10
       - AUTH_ENGINES_STORAGE_MAX_IDLE_CONNS=5
       - AUTH_ENGINES_STORAGE_CONN_MAX_LIFETIME=1h
-      - AUTH_VAULT_PATH=secret/auth
+      - AUTH_VAULT_PATH=secret/data/auth
       - AUTH_VAULT_TIMEOUT=5m
     depends_on:
       migrate:
@@ -43,7 +43,7 @@ services:
       - WEBSITE_ENGINES_STORAGE_MAX_OPEN_CONNS=10
       - WEBSITE_ENGINES_STORAGE_MAX_IDLE_CONNS=5
       - WEBSITE_ENGINES_STORAGE_CONN_MAX_LIFETIME=1h
-      - WEBSITE_VAULT_PATH=secret/website
+      - WEBSITE_VAULT_PATH=secret/data/auth
       - WEBSITE_VAULT_TIMEOUT=5m
       - WEBSITE_AUTH_SERVICE_ADDRESS=http://auth-service:9090
     depends_on:
@@ -106,6 +106,8 @@ services:
       /bin/sh -c "
         sleep 10;
         vault login my-vault-token;
+        vault auth enable userpass || true;
+        vault write auth/userpass/users/admin password=admin policies=root || true;
         vault kv put secret/auth access_secret=secret refresh_secret=secret service_token=secret;
       "
 
@@ -118,7 +120,7 @@ services:
       - AUTH_ENGINES_STORAGE_URL=postgresql://gochatuser:gochatpass@postgres:5432/gochat?sslmode=disable
       - AUTH_VAULT_ADDRESS=http://vault:8200
       - AUTH_VAULT_TOKEN=my-vault-token
-      - AUTH_VAULT_PATH=secret/auth
+      - AUTH_VAULT_PATH=secret/data/auth
       - AUTH_VAULT_TIMEOUT=5m
       - AUTH_LOGGING_LEVEL=info
     depends_on:
@@ -136,7 +138,7 @@ services:
       - WEBSITE_ENGINES_STORAGE_URL=postgresql://gochatuser:gochatpass@postgres:5432/gochat?sslmode=disable
       - WEBSITE_VAULT_ADDRESS=http://vault:8200
       - WEBSITE_VAULT_TOKEN=my-vault-token
-      - WEBSITE_VAULT_PATH=secret/website
+      - WEBSITE_VAULT_PATH=secret/data/auth
       - WEBSITE_VAULT_TIMEOUT=5m
       - WEBSITE_LOGGING_LEVEL=info
     depends_on:
@@ -145,7 +147,65 @@ services:
       vault-setup:
         condition: service_completed_successfully
 
-  swagger-ui:
+  chat-service:
+    build:
+      context: .
+      dockerfile: internal/services/chat/Dockerfile
+    environment:
+      - CHAT_LOGGING_LEVEL=info
+      - CHAT_ENGINES_STORAGE_URL=postgresql://gochatuser:gochatpass@postgres:5432/gochat?sslmode=disable
+      - CHAT_VAULT_ADDRESS=http://vault:8200
+      - CHAT_VAULT_TOKEN=my-vault-token
+      - CHAT_HANDLERS_HTTP_ADDRESS=0.0.0.0
+      - CHAT_HANDLERS_HTTP_PORT=8082
+      - CHAT_HANDLERS_GRPC_ADDRESS=0.0.0.0
+      - CHAT_HANDLERS_GRPC_PORT=9092
+      - CHAT_ENGINES_STORAGE_MAX_OPEN_CONNS=20
+      - CHAT_ENGINES_STORAGE_MAX_IDLE_CONNS=10
+      - CHAT_ENGINES_STORAGE_CONN_MAX_LIFETIME=1h
+      - CHAT_VAULT_PATH=secret/data/auth
+      - CHAT_VAULT_TIMEOUT=5m
+      - CHAT_AUTH_SERVICE_ADDRESS=auth-service:9090
+      - CHAT_WEBSITE_SERVICE_ADDRESS=website-service:9091
+      - CHAT_WEBSOCKET_PING_INTERVAL=30s
+      - CHAT_WEBSOCKET_PONG_WAIT=60s
+      - CHAT_WEBSOCKET_MAX_MESSAGE_SIZE=4096
+      - CHAT_WEBSOCKET_WRITE_WAIT=10s
+      - CHAT_WEBSOCKET_MESSAGE_QUEUE_SIZE=256
+    depends_on:
+      chat-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      vault-setup:
+        condition: service_completed_successfully
+      auth-service:
+        condition: service_started
+      website-service:
+        condition: service_started
+    ports:
+      - "8082:8082"
+      - "9092:9092"
+
+  chat-migrate:
+    build:
+      context: .
+      dockerfile: internal/services/chat/Dockerfile
+    entrypoint: ["./migrate", "-config", "./configs/config.prod.yaml"]
+    environment:
+      - CHAT_ENGINES_STORAGE_URL=postgresql://gochatuser:gochatpass@postgres:5432/gochat?sslmode=disable
+      - CHAT_VAULT_ADDRESS=http://vault:8200
+      - CHAT_VAULT_TOKEN=my-vault-token
+      - CHAT_VAULT_PATH=secret/data/auth
+      - CHAT_VAULT_TIMEOUT=5m
+      - CHAT_LOGGING_LEVEL=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault-setup:
+        condition: service_completed_successfully
+
+  wagger-ui:
     image: swaggerapi/swagger-ui
     environment:
       - SWAGGER_JSON=/swagger/auth.swagger.json
@@ -153,11 +213,14 @@ services:
       - URLS[0].name=Auth API
       - URLS[1].url=/swagger/website.swagger.json
       - URLS[1].name=Website API
+      - URLS[2].url=/swagger/chat.swagger.json
+      - URLS[2].name=Chat API
     volumes:
       - ./internal/api/generated/internal/api/proto/auth/auth.swagger.json:/swagger/auth.swagger.json
       - ./internal/api/generated/internal/api/proto/website/website.swagger.json:/swagger/website.swagger.json
+      - ./internal/api/generated/internal/api/proto/chat/chat.swagger.json:/swagger/chat.swagger.json
     ports:
-      - "8082:8080"
+      - "8083:8080"
 
 volumes:
   postgres-data:
