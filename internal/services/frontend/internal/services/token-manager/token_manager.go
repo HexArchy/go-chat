@@ -17,22 +17,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const (
-	sessionKeyAccessToken        = "access_token"
-	sessionKeyRefreshToken       = "refresh_token"
-	sessionKeyAccessTokenExpiry  = "access_token_expiry"
-	sessionKeyRefreshTokenExpiry = "refresh_token_expiry"
-	sessionKeyUserID             = "userID"
-)
-
-type SessionData struct {
-	AccessToken        string `json:"access_token"`
-	RefreshToken       string `json:"refresh_token"`
-	AccessTokenExpiry  string `json:"access_token_expiry"`
-	RefreshTokenExpiry string `json:"refresh_token_expiry"`
-	UserID             string `json:"user_id"`
-}
-
 // TokenManager defines the interface for managing tokens via sessions.
 type TokenManager interface {
 	// GetAccessToken retrieves the access token from the session.

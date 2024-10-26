@@ -115,7 +115,7 @@ func (c *Controller) handleProfileEdit(w http.ResponseWriter, r *http.Request) {
 	// Inject token into context.
 	ctx = contextWithToken(ctx, accessToken)
 
-	// Execute EditProfileUseCase
+	// Execute EditProfileUseCase.
 	err = c.editProfileUseCase.Execute(ctx, user.ID.String(), updates)
 	if err != nil {
 		c.logger.Error("Failed to update profile", zap.Error(err))

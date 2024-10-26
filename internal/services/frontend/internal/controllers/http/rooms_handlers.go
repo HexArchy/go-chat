@@ -197,7 +197,7 @@ func (c *Controller) handleRoomSearch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ctx = WithHTTPContext(ctx, r, w)
 
-	// Retrieve tokens from session
+	// Retrieve tokens from session.
 	session, err := c.store.Get(r, c.sessionName)
 	if err != nil {
 		c.logger.Error("Failed to get session", zap.Error(err))

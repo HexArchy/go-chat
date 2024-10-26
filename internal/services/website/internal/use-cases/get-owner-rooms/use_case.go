@@ -19,7 +19,6 @@ func New(deps Deps) *UseCase {
 }
 
 func (uc *UseCase) Execute(ctx context.Context, ownerID uuid.UUID) ([]*entities.Room, error) {
-
 	rooms, err := uc.roomService.GetOwnerRooms(ctx, ownerID)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get owner's rooms")

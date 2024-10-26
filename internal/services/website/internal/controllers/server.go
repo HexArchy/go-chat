@@ -81,7 +81,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Configure CORS.
 	corsHandler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"localhost:8000"},
+		AllowedOrigins:   []string{"localhost:8000"}, // TODO: Add to configs.
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type", "Authorization"},
 		AllowCredentials: true,

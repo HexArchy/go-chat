@@ -34,7 +34,7 @@ func (uc *listOwnRoomsUseCase) Execute(ctx context.Context, ownerIDStr string) (
 	uc.logger.Debug("ListRoomsUseCase: fetching owner rooms",
 		zap.String("owner_id", ownerIDStr))
 
-	// Validate ownerID
+	// Validate ownerID.
 	if ownerIDStr == "" {
 		return nil, errors.New("owner ID is required")
 	}

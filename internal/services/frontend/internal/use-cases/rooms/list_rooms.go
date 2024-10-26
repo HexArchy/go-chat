@@ -33,7 +33,7 @@ func (uc *listRoomsUseCase) Execute(ctx context.Context, limit, offset int32) ([
 	uc.logger.Debug("ListRoomsUseCase: fetching all rooms",
 		zap.Int32("limit", limit), zap.Int32("offset", offset))
 
-	// Ensure limit and offset are valid
+	// Ensure limit and offset are valid.
 	if limit <= 0 {
 		return nil, errors.New("limit must be greater than 0")
 	}
