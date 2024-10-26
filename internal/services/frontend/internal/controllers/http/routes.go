@@ -31,7 +31,8 @@ func (c *Controller) SetupRoutes() *mux.Router {
 	router.HandleFunc("/register", c.handleRegister).Methods("POST")
 
 	// Protected.
-	router.HandleFunc("/rooms", c.requireAuth(c.handleRoomsList)).Methods("GET")
+	router.HandleFunc("/rooms", c.requireAuth(c.handleOwnRoomsList)).Methods("GET")
+	router.HandleFunc("/rooms/all", c.requireAuth(c.handleRoomsList)).Methods("GET")
 	router.HandleFunc("/rooms/create", c.requireAuth(c.handleRoomCreate)).Methods("GET", "POST")
 	router.HandleFunc("/rooms/search", c.requireAuth(c.handleRoomSearch)).Methods("GET")
 	router.HandleFunc("/rooms/{id}", c.requireAuth(c.handleRoomView)).Methods("GET")
@@ -131,6 +132,9 @@ func (c *Controller) loadTemplates() error {
 					return ""
 				}
 				return string(b)
+			},
+			"add": func(a, b int) int {
+				return a + b
 			},
 		}).ParseFiles(files...)
 		if err != nil {

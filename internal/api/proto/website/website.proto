@@ -48,6 +48,11 @@ message DeleteRoomRequest {
   string owner_id = 2;
 }
 
+message GetAllRoomsRequest {
+    int32 limit = 1;
+    int32 offset = 2;
+  }
+  
 service RoomService {
   rpc CreateRoom(CreateRoomRequest) returns (CreateRoomResponse) {
     option (google.api.http) = {
@@ -77,6 +82,12 @@ service RoomService {
   rpc DeleteRoom(DeleteRoomRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
       delete: "/api/v1/rooms/{room_id}"
+    };
+  }
+  
+  rpc GetAllRooms(GetAllRoomsRequest) returns (RoomsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/rooms"
     };
   }
 }

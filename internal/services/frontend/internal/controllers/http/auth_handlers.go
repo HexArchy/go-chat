@@ -5,13 +5,40 @@ import (
 	"strconv"
 
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/clients/auth"
+	"github.com/HexArch/go-chat/internal/services/frontend/internal/entities"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 // handleHome renders the home page.
 func (c *Controller) handleHome(w http.ResponseWriter, r *http.Request) {
-	c.render(w, "home.tmpl", nil)
+	ctx := r.Context()
+	ctx = WithHTTPContext(ctx, r, w)
+
+	// Retrieve tokens from session.
+	session, err := c.store.Get(r, c.sessionName)
+	if err != nil {
+		c.logger.Error("Failed to get session", zap.Error(err))
+	}
+
+	accessToken, err := c.tokenManager.GetAccessToken(ctx, session)
+	if err != nil {
+		c.logger.Error("Failed to get access token", zap.Error(err))
+	}
+
+	// Inject token into context.
+	ctx = contextWithToken(ctx, accessToken)
+
+	// Execute GetProfileUseCase to get current user data.
+	var user *entities.User
+	user, err = c.getProfileUseCase.Execute(ctx)
+	if err != nil {
+		c.logger.Error("Failed to get profile", zap.Error(err))
+	}
+
+	c.render(w, "home.tmpl", map[string]interface{}{
+		"User": user,
+	})
 }
 
 // handleRegisterPage renders the registration page.

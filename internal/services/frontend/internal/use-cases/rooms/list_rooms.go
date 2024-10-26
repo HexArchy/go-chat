@@ -5,14 +5,13 @@ import (
 
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/clients/website"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/entities"
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
 
-// ListRoomsUseCase defines the interface for listing user-owned rooms.
+// ListRoomsUseCase defines the interface for listing all rooms with pagination.
 type ListRoomsUseCase interface {
-	Execute(ctx context.Context, ownerID string) ([]*entities.Room, error)
+	Execute(ctx context.Context, limit, offset int32) ([]*entities.Room, error)
 }
 
 // listRoomsUseCase is the concrete implementation of ListRoomsUseCase.
@@ -29,25 +28,23 @@ func NewListRoomsUseCase(websiteClient *website.Client, logger *zap.Logger) List
 	}
 }
 
-// Execute retrieves the list of rooms owned by the user.
-func (uc *listRoomsUseCase) Execute(ctx context.Context, ownerIDStr string) ([]*entities.Room, error) {
-	uc.logger.Debug("ListRoomsUseCase: fetching owner rooms",
-		zap.String("owner_id", ownerIDStr))
+// Execute retrieves a paginated list of all rooms.
+func (uc *listRoomsUseCase) Execute(ctx context.Context, limit, offset int32) ([]*entities.Room, error) {
+	uc.logger.Debug("ListRoomsUseCase: fetching all rooms",
+		zap.Int32("limit", limit), zap.Int32("offset", offset))
 
-	// Validate ownerID
-	if ownerIDStr == "" {
-		return nil, errors.New("owner ID is required")
+	// Ensure limit and offset are valid
+	if limit <= 0 {
+		return nil, errors.New("limit must be greater than 0")
+	}
+	if offset < 0 {
+		return nil, errors.New("offset cannot be negative")
 	}
 
-	ownerID, err := uuid.Parse(ownerIDStr)
+	rooms, err := uc.websiteClient.GetAllRooms(ctx, limit, offset)
 	if err != nil {
-		return nil, errors.Wrap(err, "parse owner id")
-	}
-
-	rooms, err := uc.websiteClient.GetOwnerRooms(ctx, ownerID)
-	if err != nil {
-		uc.logger.Error("ListRoomsUseCase: failed to get owner rooms", zap.Error(err))
-		return nil, errors.Wrap(err, "failed to get owner rooms")
+		uc.logger.Error("ListRoomsUseCase: failed to get all rooms", zap.Error(err))
+		return nil, errors.Wrap(err, "failed to get all rooms")
 	}
 
 	uc.logger.Debug("ListRoomsUseCase: fetched rooms successfully",

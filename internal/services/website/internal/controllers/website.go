@@ -6,6 +6,7 @@ import (
 	"github.com/HexArch/go-chat/internal/api/generated/go-chat/api/proto/website"
 	createRoomUC "github.com/HexArch/go-chat/internal/services/website/internal/use-cases/create-room"
 	deleteRoomUC "github.com/HexArch/go-chat/internal/services/website/internal/use-cases/delete-room"
+	getallrooms "github.com/HexArch/go-chat/internal/services/website/internal/use-cases/get-all-rooms"
 	getOwnerRoomsUC "github.com/HexArch/go-chat/internal/services/website/internal/use-cases/get-owner-rooms"
 	getRoomUC "github.com/HexArch/go-chat/internal/services/website/internal/use-cases/get-room"
 	searchRoomsUC "github.com/HexArch/go-chat/internal/services/website/internal/use-cases/search-rooms"
@@ -22,6 +23,7 @@ type WebsiteServiceServer struct {
 	getRoomUC       *getRoomUC.UseCase
 	getOwnerRoomsUC *getOwnerRoomsUC.UseCase
 	searchRoomsUC   *searchRoomsUC.UseCase
+	getAllRoomsUC   *getallrooms.UseCase
 }
 
 func NewWebsiteServiceServer(
@@ -30,6 +32,7 @@ func NewWebsiteServiceServer(
 	getRoomUC *getRoomUC.UseCase,
 	getOwnerRoomsUC *getOwnerRoomsUC.UseCase,
 	searchRoomsUC *searchRoomsUC.UseCase,
+	getAllRoomsUC *getallrooms.UseCase,
 ) *WebsiteServiceServer {
 	return &WebsiteServiceServer{
 		createRoomUC:    createRoomUC,
@@ -37,6 +40,7 @@ func NewWebsiteServiceServer(
 		getRoomUC:       getRoomUC,
 		getOwnerRoomsUC: getOwnerRoomsUC,
 		searchRoomsUC:   searchRoomsUC,
+		getAllRoomsUC:   getAllRoomsUC,
 	}
 }
 
@@ -61,6 +65,27 @@ func (s *WebsiteServiceServer) CreateRoom(ctx context.Context, req *website.Crea
 			UpdatedAt: timestamppb.New(room.UpdatedAt),
 		},
 	}, nil
+}
+
+// GetAllRooms fetching all rooms with pagination support.
+func (s *WebsiteServiceServer) GetAllRooms(ctx context.Context, req *website.GetAllRoomsRequest) (*website.RoomsResponse, error) {
+	rooms, err := s.getAllRoomsUC.Execute(ctx, int(req.Limit), int(req.Offset))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to retrieve all rooms")
+	}
+
+	var roomProtos []*website.Room
+	for _, room := range rooms {
+		roomProtos = append(roomProtos, &website.Room{
+			Id:        room.ID.String(),
+			Name:      room.Name,
+			OwnerId:   room.OwnerID.String(),
+			CreatedAt: timestamppb.New(room.CreatedAt),
+			UpdatedAt: timestamppb.New(room.UpdatedAt),
+		})
+	}
+
+	return &website.RoomsResponse{Rooms: roomProtos}, nil
 }
 
 // GetRoom handles fetching a room by its ID.

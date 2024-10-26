@@ -130,6 +130,36 @@ func (c *Client) GetOwnerRooms(ctx context.Context, ownerID uuid.UUID) ([]*entit
 	return rooms, nil
 }
 
+// GetAllRooms retrieves all chat rooms with pagination (limit and offset).
+// It uses retry logic to handle transient failures.
+func (c *Client) GetAllRooms(ctx context.Context, limit, offset int32) ([]*entities.Room, error) {
+	var rooms []*entities.Room
+	err := shared.RetryWithBackoff(ctx, c.logger, c.retryConf, func() error {
+		resp, err := c.client.GetAllRooms(ctx, &website.GetAllRoomsRequest{
+			Limit:  limit,
+			Offset: offset,
+		})
+		if err != nil {
+			return errors.Wrap(err, "GetAllRooms RPC failed")
+		}
+
+		for _, protoRoom := range resp.Rooms {
+			room, err := protoToRoom(protoRoom)
+			if err != nil {
+				return errors.Wrap(err, "failed to convert proto Room to entities.Room")
+			}
+			rooms = append(rooms, room)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return rooms, nil
+}
+
 // SearchRooms searches for chat rooms by name with pagination.
 // It uses retry logic to handle transient failures.
 func (c *Client) SearchRooms(ctx context.Context, name string, limit, offset int32) ([]*entities.Room, error) {

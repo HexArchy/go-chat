@@ -13,6 +13,7 @@ type RoomStorage interface {
 	GetRoomsByOwnerID(ctx context.Context, ownerID uuid.UUID) ([]*entities.Room, error)
 	GetRoomsByName(ctx context.Context, name string, limit, offset int) ([]*entities.Room, error)
 	DeleteRoom(ctx context.Context, roomID uuid.UUID) error
+	GetAllRooms(ctx context.Context, limit, offset int) ([]*entities.Room, error)
 }
 
 type Deps struct {

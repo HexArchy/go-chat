@@ -15,6 +15,7 @@ type Service interface {
 	GetOwnerRooms(ctx context.Context, ownerID uuid.UUID) ([]*entities.Room, error)
 	SearchRooms(ctx context.Context, name string, limit, offset int) ([]*entities.Room, error)
 	DeleteRoom(ctx context.Context, roomID, ownerID uuid.UUID) error
+	GetAllRooms(ctx context.Context, limit, offset int) ([]*entities.Room, error)
 }
 
 type service struct {
@@ -90,4 +91,12 @@ func (s *service) DeleteRoom(ctx context.Context, roomID, ownerID uuid.UUID) err
 		return errors.Wrap(err, "failed to delete room")
 	}
 	return nil
+}
+
+func (s *service) GetAllRooms(ctx context.Context, limit, offset int) ([]*entities.Room, error) {
+	rooms, err := s.roomStorage.GetAllRooms(ctx, limit, offset)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get all rooms")
+	}
+	return rooms, nil
 }

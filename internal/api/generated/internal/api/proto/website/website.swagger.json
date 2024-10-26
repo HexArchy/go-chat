@@ -2,21 +2,58 @@
   "swagger": "2.0",
   "info": {
     "title": "internal/api/proto/website/website.proto",
-    "version": "1"
+    "version": "version not set"
   },
-  "host": "localhost:8081",
-  "basePath": "/",
   "tags": [
     {
       "name": "RoomService"
     }
   ],
-  "consumes": ["application/json"],
-  "produces": ["application/json"],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
   "paths": {
     "/api/v1/rooms": {
+      "get": {
+        "operationId": "RoomService_GetAllRooms",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/websiteRoomsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "RoomService"
+        ]
+      },
       "post": {
-        "summary": "Create a new room",
         "operationId": "RoomService_CreateRoom",
         "responses": {
           "200": {
@@ -35,7 +72,6 @@
         "parameters": [
           {
             "name": "body",
-            "description": "Request to create a room.",
             "in": "body",
             "required": true,
             "schema": {
@@ -43,12 +79,13 @@
             }
           }
         ],
-        "tags": ["RoomService"]
+        "tags": [
+          "RoomService"
+        ]
       }
     },
     "/api/v1/rooms/search": {
       "get": {
-        "summary": "Search for rooms by name",
         "operationId": "RoomService_SearchRooms",
         "responses": {
           "200": {
@@ -86,12 +123,13 @@
             "format": "int32"
           }
         ],
-        "tags": ["RoomService"]
+        "tags": [
+          "RoomService"
+        ]
       }
     },
     "/api/v1/rooms/{roomId}": {
       "get": {
-        "summary": "Get a room by its ID",
         "operationId": "RoomService_GetRoom",
         "responses": {
           "200": {
@@ -115,10 +153,11 @@
             "type": "string"
           }
         ],
-        "tags": ["RoomService"]
+        "tags": [
+          "RoomService"
+        ]
       },
       "delete": {
-        "summary": "Delete a room by ID",
         "operationId": "RoomService_DeleteRoom",
         "responses": {
           "200": {
@@ -149,12 +188,13 @@
             "type": "string"
           }
         ],
-        "tags": ["RoomService"]
+        "tags": [
+          "RoomService"
+        ]
       }
     },
     "/api/v1/users/{ownerId}/rooms": {
       "get": {
-        "summary": "Get rooms by owner ID",
         "operationId": "RoomService_GetOwnerRooms",
         "responses": {
           "200": {
@@ -178,7 +218,9 @@
             "type": "string"
           }
         ],
-        "tags": ["RoomService"]
+        "tags": [
+          "RoomService"
+        ]
       }
     }
   },
@@ -220,8 +262,7 @@
         "ownerId": {
           "type": "string"
         }
-      },
-      "description": "Request to create a room."
+      }
     },
     "websiteCreateRoomResponse": {
       "type": "object",
@@ -229,8 +270,7 @@
         "room": {
           "$ref": "#/definitions/websiteRoom"
         }
-      },
-      "description": "Response after creating a room."
+      }
     },
     "websiteRoom": {
       "type": "object",
@@ -252,8 +292,7 @@
           "type": "string",
           "format": "date-time"
         }
-      },
-      "description": "Message representing a Room entity."
+      }
     },
     "websiteRoomsResponse": {
       "type": "object",
@@ -265,8 +304,7 @@
             "$ref": "#/definitions/websiteRoom"
           }
         }
-      },
-      "description": "Response containing multiple rooms."
+      }
     }
   }
 }

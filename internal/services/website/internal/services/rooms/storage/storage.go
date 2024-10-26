@@ -16,6 +16,7 @@ type Storage interface {
 	GetRoomsByOwnerID(ctx context.Context, ownerID uuid.UUID) ([]*entities.Room, error)
 	GetRoomsByName(ctx context.Context, name string, limit, offset int) ([]*entities.Room, error)
 	DeleteRoom(ctx context.Context, roomID uuid.UUID) error
+	GetAllRooms(ctx context.Context, limit, offset int) ([]*entities.Room, error)
 }
 
 type storage struct {
@@ -70,4 +71,15 @@ func (s *storage) DeleteRoom(ctx context.Context, roomID uuid.UUID) error {
 		return errors.Wrap(err, "failed to delete room")
 	}
 	return nil
+}
+
+func (s *storage) GetAllRooms(ctx context.Context, limit, offset int) ([]*entities.Room, error) {
+	var dtos []Room
+	if err := s.db.WithContext(ctx).
+		Limit(limit).
+		Offset(offset).
+		Find(&dtos).Error; err != nil {
+		return nil, errors.Wrap(err, "failed to retrieve all rooms")
+	}
+	return DTOsToRooms(dtos), nil
 }

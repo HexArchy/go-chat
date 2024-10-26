@@ -35,8 +35,8 @@ func (uc *searchRoomsUseCase) Execute(ctx context.Context, query string, limit, 
 		zap.Int32("limit", limit),
 		zap.Int32("offset", offset))
 
-	if len(query) > 0 && len(query) < 6 {
-		return nil, errors.New("search query must be at least 6 characters long")
+	if len(query) > 0 && len(query) < 2 {
+		return nil, errors.New("search query must be at least 2 characters long")
 	}
 
 	rooms, err := uc.websiteClient.SearchRooms(ctx, query, limit, offset)

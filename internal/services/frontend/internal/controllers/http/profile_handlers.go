@@ -112,6 +112,9 @@ func (c *Controller) handleProfileEdit(w http.ResponseWriter, r *http.Request) {
 		updates["password"] = password
 	}
 
+	// Inject token into context.
+	ctx = contextWithToken(ctx, accessToken)
+
 	// Execute EditProfileUseCase
 	err = c.editProfileUseCase.Execute(ctx, user.ID.String(), updates)
 	if err != nil {

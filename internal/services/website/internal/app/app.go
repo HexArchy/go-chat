@@ -11,6 +11,7 @@ import (
 	roomstorage "github.com/HexArch/go-chat/internal/services/website/internal/services/rooms/storage"
 	createroom "github.com/HexArch/go-chat/internal/services/website/internal/use-cases/create-room"
 	deleteroom "github.com/HexArch/go-chat/internal/services/website/internal/use-cases/delete-room"
+	getallrooms "github.com/HexArch/go-chat/internal/services/website/internal/use-cases/get-all-rooms"
 	getownerrooms "github.com/HexArch/go-chat/internal/services/website/internal/use-cases/get-owner-rooms"
 	getroom "github.com/HexArch/go-chat/internal/services/website/internal/use-cases/get-room"
 	searchrooms "github.com/HexArch/go-chat/internal/services/website/internal/use-cases/search-rooms"
@@ -58,6 +59,7 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 	getOwnerRooms := getownerrooms.New(getownerrooms.Deps{RoomService: roomService})
 	getRoom := getroom.New(getroom.Deps{RoomService: roomService})
 	searchRooms := searchrooms.New(searchrooms.Deps{RoomService: roomService})
+	getAllRooms := getallrooms.New(getallrooms.Deps{RoomService: roomService})
 
 	roomServiceServer := controllers.NewWebsiteServiceServer(
 		createRoom,
@@ -65,6 +67,7 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 		getRoom,
 		getOwnerRooms,
 		searchRooms,
+		getAllRooms,
 	)
 
 	grShutdown := graceful.NewShutdown(logger)

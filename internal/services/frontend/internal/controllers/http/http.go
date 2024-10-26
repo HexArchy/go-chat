@@ -27,6 +27,7 @@ type Controller struct {
 	createRoomUseCase      roomsUseCases.CreateRoomUseCase
 	deleteRoomUseCase      roomsUseCases.DeleteRoomUseCase
 	listRoomsUseCase       roomsUseCases.ListRoomsUseCase
+	listOwnRoomsUseCase    roomsUseCases.ListOwnRoomsUseCase
 	searchRoomsUseCase     roomsUseCases.SearchRoomsUseCase
 	viewRoomUseCase        roomsUseCases.ViewRoomUseCase
 	manageWebSocketUseCase roomsUseCases.ManageWebSocketUseCase
@@ -52,6 +53,7 @@ func NewController(
 	createRoomUseCase roomsUseCases.CreateRoomUseCase,
 	deleteRoomUseCase roomsUseCases.DeleteRoomUseCase,
 	listRoomsUseCase roomsUseCases.ListRoomsUseCase,
+	listOwnRoomsUseCase roomsUseCases.ListOwnRoomsUseCase,
 	searchRoomsUseCase roomsUseCases.SearchRoomsUseCase,
 	viewRoomUseCase roomsUseCases.ViewRoomUseCase,
 	manageWebSocketUseCase roomsUseCases.ManageWebSocketUseCase,
@@ -71,6 +73,7 @@ func NewController(
 		createRoomUseCase:      createRoomUseCase,
 		deleteRoomUseCase:      deleteRoomUseCase,
 		listRoomsUseCase:       listRoomsUseCase,
+		listOwnRoomsUseCase:    listOwnRoomsUseCase,
 		searchRoomsUseCase:     searchRoomsUseCase,
 		viewRoomUseCase:        viewRoomUseCase,
 		manageWebSocketUseCase: manageWebSocketUseCase,
