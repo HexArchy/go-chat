@@ -28,6 +28,8 @@ services:
     ports:
       - "8080:8080"
       - "9090:9090"
+    networks:
+      - backend
 
   website-service:
     build:
@@ -57,95 +59,8 @@ services:
     ports:
       - "8081:8081"
       - "9091:9091"
-
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_DB=gochat
-      - POSTGRES_USER=gochatuser
-      - POSTGRES_PASSWORD=gochatpass
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gochatuser -d gochat"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  pgadmin:
-    image: dpage/pgadmin4
-    environment:
-      - PGADMIN_DEFAULT_EMAIL=admin@example.com
-      - PGADMIN_DEFAULT_PASSWORD=admin
-    ports:
-      - "5050:80"
-    depends_on:
-      - postgres
-
-  vault:
-    image: vault:1.13.3
-    cap_add:
-      - IPC_LOCK
-    environment:
-      VAULT_DEV_ROOT_TOKEN_ID: my-vault-token
-      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
-      VAULT_DEV_UI: "true"
-    command: server -dev -dev-root-token-id=my-vault-token
-    ports:
-      - "8200:8200"
-    volumes:
-      - vault-data:/vault/data
-
-  vault-setup:
-    image: vault:1.13.3
-    environment:
-      VAULT_ADDR: "http://vault:8200"
-    entrypoint: >
-      /bin/sh -c "
-        sleep 10;
-        vault login my-vault-token;
-        vault auth enable userpass || true;
-        vault write auth/userpass/users/admin password=admin policies=root || true;
-        vault kv put secret/auth access_secret=secret refresh_secret=secret service_token=secret;
-      "
-
-  migrate:
-    build:
-      context: .
-      dockerfile: internal/services/auth/Dockerfile
-    entrypoint: ["./migrate", "-config", "./configs/config.prod.yaml"]
-    environment:
-      - AUTH_ENGINES_STORAGE_URL=postgresql://gochatuser:gochatpass@postgres:5432/gochat?sslmode=disable
-      - AUTH_VAULT_ADDRESS=http://vault:8200
-      - AUTH_VAULT_TOKEN=my-vault-token
-      - AUTH_VAULT_PATH=secret/data/auth
-      - AUTH_VAULT_TIMEOUT=5m
-      - AUTH_LOGGING_LEVEL=info
-    depends_on:
-      postgres:
-        condition: service_healthy
-      vault-setup:
-        condition: service_completed_successfully
-
-  website-migrate:
-    build:
-      context: .
-      dockerfile: internal/services/website/Dockerfile
-    entrypoint: ["./migrate", "-config", "./configs/config.prod.yaml"]
-    environment:
-      - WEBSITE_ENGINES_STORAGE_URL=postgresql://gochatuser:gochatpass@postgres:5432/gochat?sslmode=disable
-      - WEBSITE_VAULT_ADDRESS=http://vault:8200
-      - WEBSITE_VAULT_TOKEN=my-vault-token
-      - WEBSITE_VAULT_PATH=secret/data/auth
-      - WEBSITE_VAULT_TIMEOUT=5m
-      - WEBSITE_LOGGING_LEVEL=info
-    depends_on:
-      postgres:
-        condition: service_healthy
-      vault-setup:
-        condition: service_completed_successfully
+    networks:
+      - backend
 
   chat-service:
     build:
@@ -186,6 +101,129 @@ services:
     ports:
       - "8082:8082"
       - "9092:9092"
+    networks:
+      - backend
+
+  frontend-service:
+    build:
+      context: .
+      dockerfile: internal/services/frontend/Dockerfile
+    environment:
+      - FRONTEND_LOGGING_LEVEL=debug
+      - FRONTEND_HANDLERS_HTTP_ADDRESS=0.0.0.0
+      - FRONTEND_HANDLERS_HTTP_PORT=8084
+      - FRONTEND_AUTH_SERVICE_ADDRESS=auth-service:9090
+      - FRONTEND_WEBSITE_SERVICE_ADDRESS=website-service:9091
+      - FRONTEND_CHAT_SERVICE_ADDRESS=chat-service:9092
+      - FRONTEND_SESSION_SECRET=your-session-secret
+      - FRONTEND_SESSION_MAX_AGE=24h
+    depends_on:
+      - auth-service
+      - website-service
+      - chat-service
+    ports:
+      - "8084:8084"
+    networks:
+      - backend
+    volumes:
+      - ./internal/services/frontend/internal/controllers/http/templates:/root/templates
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=gochat
+      - POSTGRES_USER=gochatuser
+      - POSTGRES_PASSWORD=gochatpass
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gochatuser -d gochat"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@example.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    depends_on:
+      - postgres
+    networks:
+      - backend
+
+  vault:
+    image: vault:1.13.3
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: my-vault-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_DEV_UI: "true"
+      VAULT_ADDR: "http://vault.localhost:8200"
+    command: server -dev -dev-root-token-id=my-vault-token
+    volumes:
+      - vault-data:/vault/data
+    networks:
+      - backend
+
+  vault-setup:
+    image: vault:1.13.3
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+    entrypoint: >
+      /bin/sh -c "
+        sleep 10;
+        vault login my-vault-token;
+        vault auth enable userpass || true;
+        vault write auth/userpass/users/admin password=admin policies=root || true;
+        vault kv put secret/auth access_secret=secret refresh_secret=secret service_token=secret;
+      "
+    networks:
+      - backend
+
+  migrate:
+    build:
+      context: .
+      dockerfile: internal/services/auth/Dockerfile
+    entrypoint: ["./migrate", "-config", "./configs/config.prod.yaml"]
+    environment:
+      - AUTH_ENGINES_STORAGE_URL=postgresql://gochatuser:gochatpass@postgres:5432/gochat?sslmode=disable
+      - AUTH_VAULT_ADDRESS=http://vault:8200
+      - AUTH_VAULT_TOKEN=my-vault-token
+      - AUTH_VAULT_PATH=secret/data/auth
+      - AUTH_VAULT_TIMEOUT=5m
+      - AUTH_LOGGING_LEVEL=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault-setup:
+        condition: service_completed_successfully
+    networks:
+      - backend
+
+  website-migrate:
+    build:
+      context: .
+      dockerfile: internal/services/website/Dockerfile
+    entrypoint: ["./migrate", "-config", "./configs/config.prod.yaml"]
+    environment:
+      - WEBSITE_ENGINES_STORAGE_URL=postgresql://gochatuser:gochatpass@postgres:5432/gochat?sslmode=disable
+      - WEBSITE_VAULT_ADDRESS=http://vault:8200
+      - WEBSITE_VAULT_TOKEN=my-vault-token
+      - WEBSITE_VAULT_PATH=secret/data/auth
+      - WEBSITE_VAULT_TIMEOUT=5m
+      - WEBSITE_LOGGING_LEVEL=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault-setup:
+        condition: service_completed_successfully
+    networks:
+      - backend
 
   chat-migrate:
     build:
@@ -204,8 +242,26 @@ services:
         condition: service_healthy
       vault-setup:
         condition: service_completed_successfully
+    networks:
+      - backend
 
-  wagger-ui:
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - auth-service
+      - website-service
+      - chat-service
+      - swagger-ui
+      - vault
+      - pgadmin
+    networks:
+      - backend
+
+  swagger-ui:
     image: swaggerapi/swagger-ui
     environment:
       - SWAGGER_JSON=/swagger/auth.swagger.json
@@ -219,8 +275,11 @@ services:
       - ./internal/api/generated/internal/api/proto/auth/auth.swagger.json:/swagger/auth.swagger.json
       - ./internal/api/generated/internal/api/proto/website/website.swagger.json:/swagger/website.swagger.json
       - ./internal/api/generated/internal/api/proto/chat/chat.swagger.json:/swagger/chat.swagger.json
-    ports:
-      - "8083:8080"
+    networks:
+      - backend
+
+networks:
+  backend:
 
 volumes:
   postgres-data:

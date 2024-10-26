@@ -4,15 +4,17 @@
     "title": "internal/api/proto/chat/chat.proto",
     "version": "version not set"
   },
-  "host": "localhost:8082",
-  "basePath": "/",
   "tags": [
     {
       "name": "ChatService"
     }
   ],
-  "consumes": ["application/json"],
-  "produces": ["application/json"],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
   "paths": {
     "/api/v1/chat/{roomId}/messages": {
       "get": {
@@ -54,7 +56,47 @@
             "format": "int32"
           }
         ],
-        "tags": ["ChatService"]
+        "tags": [
+          "ChatService"
+        ]
+      },
+      "post": {
+        "summary": "SendMessage - отправка нового сообщения.",
+        "operationId": "ChatService_SendMessage",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "roomId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ChatServiceSendMessageBody"
+            }
+          }
+        ],
+        "tags": [
+          "ChatService"
+        ]
       }
     },
     "/api/v1/chat/{roomId}/ws": {
@@ -98,15 +140,33 @@
             "type": "string"
           }
         ],
-        "tags": ["ChatService"]
+        "tags": [
+          "ChatService"
+        ]
       }
     }
   },
   "definitions": {
     "ChatEventEventType": {
       "type": "string",
-      "enum": ["UNKNOWN", "USER_JOINED", "USER_LEFT", "NEW_MESSAGE"],
+      "enum": [
+        "UNKNOWN",
+        "USER_JOINED",
+        "USER_LEFT",
+        "NEW_MESSAGE"
+      ],
       "default": "UNKNOWN"
+    },
+    "ChatServiceSendMessageBody": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        }
+      }
     },
     "chatChatEvent": {
       "type": "object",
@@ -121,8 +181,7 @@
           "$ref": "#/definitions/ChatEventEventType"
         },
         "message": {
-          "$ref": "#/definitions/chatMessage",
-          "description": "опционально, для NEW_MESSAGE."
+          "$ref": "#/definitions/chatMessage"
         },
         "timestamp": {
           "type": "string",

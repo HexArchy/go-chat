@@ -16,6 +16,9 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -238,6 +241,23 @@ func (s *ChatServiceServer) getUserIDFromToken(token string) (uuid.UUID, error) 
 	}
 
 	return userID, nil
+}
+
+func (s *ChatServiceServer) SendMessage(ctx context.Context, req *chat.SendMessageRequest) (*emptypb.Empty, error) {
+	token := getTokenFromContext(ctx)
+	if token == "" {
+		return nil, status.Error(codes.Unauthenticated, "authentication token is required")
+	}
+
+	roomID, err := uuid.Parse(req.RoomId)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid room ID: %v", err)
+	}
+
+	if err := s.sendMessageUC.Execute(ctx, token, roomID, req.Content); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
 }
 
 func (s *ChatServiceServer) broadcastEvent(ctx context.Context, event *entities.ChatEvent) {

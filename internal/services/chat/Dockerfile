@@ -1,4 +1,3 @@
-# internal/services/chat/Dockerfile
 # Build Stage
 FROM golang:1.23-alpine AS builder
 

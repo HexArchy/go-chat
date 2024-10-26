@@ -6,10 +6,10 @@ import (
 	"github.com/google/uuid"
 )
 
-type Message struct {
+type Room struct {
 	ID        uuid.UUID
-	RoomID    uuid.UUID
-	UserID    uuid.UUID
-	Content   string
+	Name      string
+	OwnerID   string
 	CreatedAt time.Time
+	UpdatedAt time.Time
 }

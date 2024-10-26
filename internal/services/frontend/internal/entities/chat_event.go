@@ -6,10 +6,10 @@ import (
 	"github.com/google/uuid"
 )
 
-type Message struct {
-	ID        uuid.UUID
+type ChatEvent struct {
 	RoomID    uuid.UUID
 	UserID    uuid.UUID
-	Content   string
-	CreatedAt time.Time
+	Type      EventType
+	Message   *Message
+	Timestamp time.Time
 }

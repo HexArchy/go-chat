@@ -1,0 +1,100 @@
+{{ define "content" }}
+<div class="flex-1 flex flex-col h-screen max-h-screen" x-data="chat()">
+    <div class="flex-1 min-h-0 flex flex-col">
+        <!-- Room Header -->
+        <div class="border-b border-gray-200 px-4 py-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h2 class="text-lg font-medium text-gray-900">{{ .Room.Name }}</h2>
+                    <p class="text-sm text-gray-500">Created by {{ .Room.OwnerID }}</p>
+                </div>
+                {{ if eq .User.ID.String .Room.OwnerID }}
+                <form action="/rooms/{{ .Room.ID }}/delete" method="POST">
+                    <button type="submit" class="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500">Delete Room</button>
+                </form>
+                {{ end }}
+            </div>
+        </div>
+
+        <!-- Messages -->
+        <div class="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-6 lg:px-8" id="messages" x-ref="messageContainer">
+            <template x-for="message in messages" :key="message.id">
+                <div :class="{'flex items-start mb-4': true, 'justify-end': message.userId === currentUserId}">
+                    <div :class="{'rounded-lg px-4 py-2 max-w-[70%]': true, 'bg-indigo-600 text-white': message.userId === currentUserId, 'bg-gray-100': message.userId !== currentUserId}">
+                        <p class="text-sm" x-text="message.content"></p>
+                        <span class="text-xs mt-1 block" x-text="formatTime(message.createdAt)"></span>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Input Area -->
+        <div class="border-t border-gray-200 px-4 py-4 sm:px-6 lg:px-8">
+            <form @submit.prevent="sendMessage" class="flex space-x-3">
+                <div class="flex-1">
+                    <input type="text" x-model="newMessage" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" placeholder="Type your message...">
+                </div>
+                <button type="submit" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">Send</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function chat() {
+    return {
+        messages: {{ .Messages | json }},
+        newMessage: '',
+        currentUserId: '{{ .User.ID }}',
+        ws: null,
+
+        init() {
+            this.connectWebSocket();
+            this.scrollToBottom();
+        },
+
+        connectWebSocket() {
+            this.ws = new WebSocket(`ws://${window.location.host}/rooms/{{ .Room.ID }}/ws`);
+            
+            this.ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'new_message' && data.message) {
+                    this.messages.push(data.message);
+                    this.$nextTick(() => this.scrollToBottom());
+                } else if (data.type === 'join') {
+                    // Показываем уведомление о подключении пользователя
+                    const notification = document.createElement('div');
+                    notification.className = 'text-center text-sm text-gray-500 my-2';
+                    notification.textContent = `User ${data.userId} joined the chat`;
+                    this.$refs.messageContainer.appendChild(notification);
+                    this.scrollToBottom();
+                }
+            };
+
+            this.ws.onclose = () => {
+                setTimeout(() => this.connectWebSocket(), 1000);
+            };
+        },
+
+        sendMessage() {
+            if (!this.newMessage.trim()) return;
+
+            this.ws.send(JSON.stringify({
+                content: this.newMessage
+            }));
+
+            this.newMessage = '';
+        },
+
+        scrollToBottom() {
+            this.$refs.messageContainer.scrollTop = this.$refs.messageContainer.scrollHeight;
+        },
+
+        formatTime(timestamp) {
+            return new Date(timestamp).toLocaleTimeString();
+        }
+    }
+}
+</script>
+{{ end }}

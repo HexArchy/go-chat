@@ -1,0 +1,38 @@
+engines:
+  storage:
+    url: postgresql://gochatuser:gochatpass@postgres:5432/gochat?sslmode=disable
+    max_open_conns: 20
+    max_idle_conns: 10
+    conn_max_lifetime: 1h
+
+logging:
+  level: info
+
+handlers:
+  http:
+    read_timeout: 10s
+    write_timeout: 10s
+    address: "0.0.0.0"
+    port: "8084"  # Порт для HTTP-сервера frontend
+    templates_path: "/root/templates"  # Путь для шаблонов
+  grpc:
+    address: "0.0.0.0"
+    port: "9094"  # Порт для gRPC сервера, если он необходим
+
+auth_service:
+  address: "auth-service:9090"
+  service_token: "secret"  # Будет получен из Vault
+
+website_service:
+  address: "website-service:9091"
+  service_token: "secret"  # Будет получен из Vault
+
+chat_service:
+  address: "chat-service:9092"
+  service_token: "secret"  # Будет получен из Vault
+
+session:
+  secret: "your-session-secret"  # Может быть получен из Vault
+  max_age: 24h
+
+graceful_shutdown: 15s

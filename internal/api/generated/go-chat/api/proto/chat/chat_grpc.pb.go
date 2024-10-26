@@ -11,6 +11,7 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -20,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	ChatService_GetMessages_FullMethodName = "/chat.ChatService/GetMessages"
+	ChatService_SendMessage_FullMethodName = "/chat.ChatService/SendMessage"
 	ChatService_Connect_FullMethodName     = "/chat.ChatService/Connect"
 )
 
@@ -29,6 +31,8 @@ const (
 type ChatServiceClient interface {
 	// GetMessages - получение истории сообщений комнаты.
 	GetMessages(ctx context.Context, in *GetMessagesRequest, opts ...grpc.CallOption) (*GetMessagesResponse, error)
+	// SendMessage - отправка нового сообщения.
+	SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Connect - установка WebSocket соединения.
 	Connect(ctx context.Context, in *WebSocketRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChatEvent], error)
 }
@@ -45,6 +49,16 @@ func (c *chatServiceClient) GetMessages(ctx context.Context, in *GetMessagesRequ
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetMessagesResponse)
 	err := c.cc.Invoke(ctx, ChatService_GetMessages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, ChatService_SendMessage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +90,8 @@ type ChatService_ConnectClient = grpc.ServerStreamingClient[ChatEvent]
 type ChatServiceServer interface {
 	// GetMessages - получение истории сообщений комнаты.
 	GetMessages(context.Context, *GetMessagesRequest) (*GetMessagesResponse, error)
+	// SendMessage - отправка нового сообщения.
+	SendMessage(context.Context, *SendMessageRequest) (*emptypb.Empty, error)
 	// Connect - установка WebSocket соединения.
 	Connect(*WebSocketRequest, grpc.ServerStreamingServer[ChatEvent]) error
 	mustEmbedUnimplementedChatServiceServer()
@@ -90,6 +106,9 @@ type UnimplementedChatServiceServer struct{}
 
 func (UnimplementedChatServiceServer) GetMessages(context.Context, *GetMessagesRequest) (*GetMessagesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMessages not implemented")
+}
+func (UnimplementedChatServiceServer) SendMessage(context.Context, *SendMessageRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendMessage not implemented")
 }
 func (UnimplementedChatServiceServer) Connect(*WebSocketRequest, grpc.ServerStreamingServer[ChatEvent]) error {
 	return status.Errorf(codes.Unimplemented, "method Connect not implemented")
@@ -133,6 +152,24 @@ func _ChatService_GetMessages_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ChatService_SendMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendMessageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).SendMessage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_SendMessage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).SendMessage(ctx, req.(*SendMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ChatService_Connect_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(WebSocketRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -154,6 +191,10 @@ var ChatService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMessages",
 			Handler:    _ChatService_GetMessages_Handler,
+		},
+		{
+			MethodName: "SendMessage",
+			Handler:    _ChatService_SendMessage_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

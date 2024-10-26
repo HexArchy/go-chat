@@ -16,8 +16,11 @@ func comparePasswords(hashedPassword, password string) error {
 func (s *service) createJWTToken(user *entities.User, secret []byte, ttl time.Duration) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id":     user.ID.String(),
+		"email":       user.Email,
+		"username":    user.Username,
 		"permissions": user.Permissions,
 		"exp":         time.Now().Add(ttl).Unix(),
+		"iat":         time.Now().Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(secret)

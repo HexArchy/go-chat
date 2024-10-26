@@ -5,6 +5,7 @@ package chat;
 option go_package = "go-chat/api/proto/chat";
 
 import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
 message Message {
@@ -26,7 +27,7 @@ message ChatEvent {
   string room_id = 1;
   string user_id = 2;
   EventType event_type = 3;
-  Message message = 4; // опционально, для NEW_MESSAGE.
+  Message message = 4; 
   google.protobuf.Timestamp timestamp = 5;
 }
 
@@ -35,6 +36,12 @@ message GetMessagesRequest {
   int32 limit = 2;
   int32 offset = 3;
 }
+
+message SendMessageRequest {
+    string room_id = 1;
+    string user_id = 2;
+    string content = 3;
+  }
 
 message GetMessagesResponse {
   repeated Message messages = 1;
@@ -50,6 +57,14 @@ service ChatService {
   rpc GetMessages(GetMessagesRequest) returns (GetMessagesResponse) {
     option (google.api.http) = {
       get: "/api/v1/chat/{room_id}/messages"
+    };
+  }
+
+  // SendMessage - отправка нового сообщения.
+  rpc SendMessage(SendMessageRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/v1/chat/{room_id}/messages"
+      body: "*"
     };
   }
 

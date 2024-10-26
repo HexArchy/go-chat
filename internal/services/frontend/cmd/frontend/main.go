@@ -11,8 +11,8 @@ import (
 	"syscall"
 
 	"github.com/HexArch/go-chat/internal/pkg/logger"
-	"github.com/HexArch/go-chat/internal/services/auth/internal/app"
-	"github.com/HexArch/go-chat/internal/services/auth/internal/config"
+	"github.com/HexArch/go-chat/internal/services/frontend/internal/app"
+	"github.com/HexArch/go-chat/internal/services/frontend/internal/config"
 	"go.uber.org/zap"
 )
 

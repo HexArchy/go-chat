@@ -23,7 +23,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Сообщение пользователя
 type User struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -135,7 +134,6 @@ func (x *User) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// Запрос на регистрацию пользователя
 type RegisterUserRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -223,7 +221,6 @@ func (x *RegisterUserRequest) GetBio() string {
 	return ""
 }
 
-// Запрос на вход
 type LoginRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -279,7 +276,6 @@ func (x *LoginRequest) GetPassword() string {
 	return ""
 }
 
-// Ответ на вход
 type LoginResponse struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -335,7 +331,6 @@ func (x *LoginResponse) GetRefreshToken() string {
 	return ""
 }
 
-// Запрос на обновление токена
 type RefreshTokenRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -383,7 +378,6 @@ func (x *RefreshTokenRequest) GetRefreshToken() string {
 	return ""
 }
 
-// Ответ на обновление токена
 type RefreshTokenResponse struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -439,7 +433,6 @@ func (x *RefreshTokenResponse) GetRefreshToken() string {
 	return ""
 }
 
-// Запрос на получение пользователя
 type GetUserRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -487,7 +480,6 @@ func (x *GetUserRequest) GetUserId() string {
 	return ""
 }
 
-// Запрос на обновление пользователя
 type UpdateUserRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -591,7 +583,6 @@ func (x *UpdateUserRequest) GetPermissions() []string {
 	return nil
 }
 
-// Запрос на удаление пользователя
 type DeleteUserRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache

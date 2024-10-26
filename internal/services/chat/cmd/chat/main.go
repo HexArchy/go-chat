@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 
 	"github.com/HexArch/go-chat/internal/pkg/logger"
@@ -54,6 +55,7 @@ func main() {
 func handlePanic() {
 	if r := recover(); r != nil {
 		fmt.Fprintf(os.Stderr, "Application crashed with panic: %v\n", r)
+		debug.PrintStack()
 		log.Printf("Recovered from panic: %v\n", r)
 		os.Exit(1)
 	}
