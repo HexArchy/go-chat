@@ -15,12 +15,7 @@ type WebsiteService interface {
 	RoomExists(ctx context.Context, roomID uuid.UUID) (bool, error)
 }
 
-type AuthService interface {
-	ValidateToken(ctx context.Context, token string) (userID uuid.UUID, err error)
-}
-
 type Deps struct {
 	ChatService    ChatService
 	WebsiteService WebsiteService
-	AuthService    AuthService
 }

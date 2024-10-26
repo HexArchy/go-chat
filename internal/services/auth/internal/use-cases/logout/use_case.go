@@ -18,7 +18,7 @@ func New(deps Deps) *UseCase {
 }
 
 func (uc *UseCase) Execute(ctx context.Context, userID uuid.UUID) error {
-	if err := uc.authService.Logout(ctx, userID); err != nil {
+	if err := uc.authService.Revoke(ctx, userID); err != nil {
 		return errors.Wrap(err, "failed to logout user")
 	}
 

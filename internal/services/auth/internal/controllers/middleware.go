@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/HexArch/go-chat/internal/services/auth/internal/use-cases/validatetoken"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -13,42 +14,73 @@ import (
 
 type userKeyType string
 
-const userIDKey userKeyType = "userID"
+const (
+	userIDKey    userKeyType = "userID"
+	bearerPrefix             = "Bearer "
+)
 
-func AuthInterceptor(jwtSecret []byte, validateTokenUC *validatetoken.UseCase, serviceToken string) grpc.UnaryServerInterceptor {
+var publicMethods = map[string]bool{
+	"/auth.AuthService/Login":         true,
+	"/auth.AuthService/RegisterUser":  true,
+	"/auth.AuthService/RefreshToken":  true,
+	"/auth.AuthService/ValidateToken": true,
+}
+
+func AuthInterceptor(logger *zap.Logger, validateTokenUC *validatetoken.UseCase, serviceToken string) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req interface{},
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (interface{}, error) {
-		if info.FullMethod == "/auth.AuthService/Login" || info.FullMethod == "/auth.AuthService/RegisterUser" {
+		// Skip auth for public methods.
+		if publicMethods[info.FullMethod] {
 			return handler(ctx, req)
 		}
 
-		md, ok := metadata.FromIncomingContext(ctx)
-		if !ok {
-			return nil, status.Errorf(codes.Unauthenticated, "metadata is not provided")
+		token, err := extractToken(ctx)
+		if err != nil {
+			logger.Debug("Failed to extract token",
+				zap.String("method", info.FullMethod),
+				zap.Error(err))
+			return nil, err
 		}
 
-		var token string
-		if values := md["authorization"]; len(values) > 0 {
-			token = strings.TrimPrefix(values[0], "Bearer ")
-		} else {
-			return nil, status.Errorf(codes.Unauthenticated, "authorization token is not provided")
-		}
-
+		// Check service token.
 		if token == serviceToken {
 			return handler(ctx, req)
 		}
 
+		// Validate user token.
 		user, err := validateTokenUC.Execute(ctx, token)
 		if err != nil {
-			return nil, status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
+			logger.Debug("Token validation failed",
+				zap.String("method", info.FullMethod),
+				zap.Error(err))
+			return nil, status.Error(codes.Unauthenticated, "invalid token")
 		}
 
-		ctx = context.WithValue(ctx, userIDKey, user.ID)
-
-		return handler(ctx, req)
+		// Add user ID to context.
+		newCtx := context.WithValue(ctx, userIDKey, user.ID)
+		return handler(newCtx, req)
 	}
+}
+
+func extractToken(ctx context.Context) (string, error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return "", status.Error(codes.Unauthenticated, "no metadata provided")
+	}
+
+	values := md.Get("authorization")
+	if len(values) == 0 {
+		return "", status.Error(codes.Unauthenticated, "no authorization header")
+	}
+
+	token := values[0]
+	if !strings.HasPrefix(token, bearerPrefix) {
+		return "", status.Error(codes.Unauthenticated, "invalid authorization format")
+	}
+
+	return strings.TrimPrefix(token, bearerPrefix), nil
 }

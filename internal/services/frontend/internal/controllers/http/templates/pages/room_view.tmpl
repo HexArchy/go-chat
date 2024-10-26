@@ -54,26 +54,38 @@ function chat() {
         },
 
         connectWebSocket() {
-            this.ws = new WebSocket(`ws://${window.location.host}/rooms/{{ .Room.ID }}/ws`);
-            
+            const token = '{{ .User.Token }}'; // Предполагается, что токен доступен
+            this.ws = new WebSocket(`ws://${window.location.host}/ws/chat/${encodeURIComponent('{{ .Room.ID }}')}`);
+
+            this.ws.onopen = () => {
+                // Отправляем инициализационное сообщение с токеном
+                this.ws.send(JSON.stringify({
+                    type: 'init',
+                    token: token
+                }));
+            };
+
             this.ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 
                 if (data.type === 'new_message' && data.message) {
                     this.messages.push(data.message);
                     this.$nextTick(() => this.scrollToBottom());
-                } else if (data.type === 'join') {
-                    // Показываем уведомление о подключении пользователя
-                    const notification = document.createElement('div');
-                    notification.className = 'text-center text-sm text-gray-500 my-2';
-                    notification.textContent = `User ${data.userId} joined the chat`;
-                    this.$refs.messageContainer.appendChild(notification);
-                    this.scrollToBottom();
+                } else if (data.type === 'user_joined') {
+                    this.addNotification(`Пользователь ${data.userId} присоединился к чату`);
+                } else if (data.type === 'user_left') {
+                    this.addNotification(`Пользователь ${data.userId} покинул чат`);
                 }
             };
 
             this.ws.onclose = () => {
+                this.addNotification('Соединение с чатом закрыто. Попытка переподключения...');
                 setTimeout(() => this.connectWebSocket(), 1000);
+            };
+
+            this.ws.onerror = (error) => {
+                console.error('WebSocket ошибка:', error);
+                this.ws.close();
             };
         },
 
@@ -81,14 +93,28 @@ function chat() {
             if (!this.newMessage.trim()) return;
 
             this.ws.send(JSON.stringify({
+                type: 'message',
                 content: this.newMessage
             }));
 
             this.newMessage = '';
         },
 
+        addNotification(message) {
+            this.messages.push({
+                id: uuidv4(), // Функция генерации UUID
+                userId: 'system',
+                content: message,
+                createdAt: new Date().toISOString()
+            });
+            this.$nextTick(() => this.scrollToBottom());
+        },
+
         scrollToBottom() {
-            this.$refs.messageContainer.scrollTop = this.$refs.messageContainer.scrollHeight;
+            const container = this.$refs.messageContainer;
+            if (container) {
+                container.scrollTop = container.scrollHeight;
+            }
         },
 
         formatTime(timestamp) {

@@ -9,7 +9,7 @@ import (
 type Room struct {
 	ID        uuid.UUID
 	Name      string
-	OwnerID   string
+	OwnerID   uuid.UUID
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

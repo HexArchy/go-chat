@@ -2,34 +2,41 @@ package chat
 
 import (
 	"context"
-	"fmt"
-	"io"
+	"time"
 
 	"github.com/HexArch/go-chat/internal/api/generated/go-chat/api/proto/chat"
+	"github.com/HexArch/go-chat/internal/services/frontend/internal/clients/shared"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/entities"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 )
 
 type Client struct {
-	client chat.ChatServiceClient
-	conn   *grpc.ClientConn
+	logger    *zap.Logger
+	client    chat.ChatServiceClient
+	conn      *grpc.ClientConn
+	authInter *shared.AuthInterceptor
 }
 
-func NewClient(address string) (*Client, error) {
-	conn, err := grpc.NewClient(address,
+func NewClient(logger *zap.Logger, address string, authInter *shared.AuthInterceptor) (*Client, error) {
+	conn, err := grpc.NewClient(
+		address,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(authInter.UnaryClientInterceptor()),
+		grpc.WithStreamInterceptor(authInter.StreamClientInterceptor()),
 	)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create gRPC connection")
+		return nil, errors.Wrap(err, "failed to connect to chat service")
 	}
 
 	return &Client{
-		client: chat.NewChatServiceClient(conn),
-		conn:   conn,
+		logger:    logger,
+		client:    chat.NewChatServiceClient(conn),
+		conn:      conn,
+		authInter: authInter,
 	}, nil
 }
 
@@ -37,64 +44,98 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-func (c *Client) GetMessages(ctx context.Context, token string, roomID uuid.UUID, limit, offset int32) ([]*entities.Message, error) {
-	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", fmt.Sprintf("Bearer %s", token))
-	resp, err := c.client.GetMessages(ctx, &chat.GetMessagesRequest{
-		RoomId: roomID.String(),
-		Limit:  limit,
-		Offset: offset,
+// GetMessages retrieves chat messages with retry and timeout.
+func (c *Client) GetMessages(ctx context.Context, roomID uuid.UUID, limit, offset int32) ([]*entities.Message, error) {
+	c.logger.Debug("GetMessages: retrieving messages",
+		zap.String("room_id", roomID.String()),
+		zap.Int32("limit", limit),
+		zap.Int32("offset", offset))
+
+	var messages []*entities.Message
+
+	err := shared.RetryWithBackoff(ctx, c.logger, shared.DefaultRetryConfig(), func() error {
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+
+		resp, err := c.client.GetMessages(ctx, &chat.GetMessagesRequest{
+			RoomId: roomID.String(),
+			Limit:  limit,
+			Offset: offset,
+		})
+		if err != nil {
+			return errors.Wrap(err, "failed to get messages")
+		}
+
+		messages = make([]*entities.Message, len(resp.Messages))
+		for i, m := range resp.Messages {
+			msg, err := protoToMessage(m)
+			if err != nil {
+				return errors.Wrap(err, "failed to convert message")
+			}
+			messages[i] = msg
+		}
+		return nil
 	})
+
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get messages")
+		return nil, err
 	}
 
-	messages := make([]*entities.Message, 0, len(resp.Messages))
-	for _, m := range resp.Messages {
-		msg, err := protoToMessage(m)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to convert message")
-		}
-		messages = append(messages, msg)
-	}
 	return messages, nil
 }
 
-func (c *Client) Connect(ctx context.Context, token string, roomID, userID uuid.UUID) (chan *entities.ChatEvent, chan error, error) {
-	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", fmt.Sprintf("Bearer %s", token))
-	stream, err := c.client.Connect(ctx, &chat.WebSocketRequest{
-		RoomId: roomID.String(),
-		UserId: userID.String(),
-	})
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to connect to chat")
-	}
+// SendMessage sends a new message to the chat.
+func (c *Client) SendMessage(ctx context.Context, roomID uuid.UUID, userID uuid.UUID, content string) error {
+	return shared.RetryWithBackoff(ctx, c.logger, shared.DefaultRetryConfig(), func() error {
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
 
-	eventChan := make(chan *entities.ChatEvent)
-	errorChan := make(chan error)
+		_, err := c.client.SendMessage(ctx, &chat.SendMessageRequest{
+			RoomId:  roomID.String(),
+			UserId:  userID.String(),
+			Content: content,
+		})
+		return err
+	})
+}
+
+// Connect establishes WebSocket connection to chat.
+func (c *Client) Connect(ctx context.Context, roomID uuid.UUID, userID uuid.UUID) (chan *entities.ChatEvent, chan error, context.CancelFunc, error) {
+	c.logger.Debug("Connect: establishing chat connection",
+		zap.String("room_id", roomID.String()),
+		zap.String("user_id", userID.String()))
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	eventChan := make(chan *entities.ChatEvent, 100)
+	errChan := make(chan error, 1)
 
 	go func() {
 		defer close(eventChan)
-		defer close(errorChan)
+		defer close(errChan)
+
+		stream, err := c.client.Connect(ctx, &chat.WebSocketRequest{
+			RoomId: roomID.String(),
+			UserId: userID.String(),
+		})
+		if err != nil {
+			errChan <- errors.Wrap(err, "failed to initiate chat stream")
+			return
+		}
 
 		for {
 			event, err := stream.Recv()
-			if err == io.EOF {
-				return
-			}
 			if err != nil {
-				select {
-				case errorChan <- errors.Wrap(err, "error receiving message"):
-				case <-ctx.Done():
-				}
+				errChan <- errors.Wrap(err, "error receiving chat event")
 				return
 			}
 
 			chatEvent, err := protoToChatEvent(event)
 			if err != nil {
-				select {
-				case errorChan <- errors.Wrap(err, "error converting event"):
-				case <-ctx.Done():
-				}
+				c.logger.Error("Failed to convert chat event",
+					zap.Error(err),
+					zap.String("room_id", roomID.String()),
+					zap.String("user_id", userID.String()))
 				continue
 			}
 
@@ -106,22 +147,10 @@ func (c *Client) Connect(ctx context.Context, token string, roomID, userID uuid.
 		}
 	}()
 
-	return eventChan, errorChan, nil
+	return eventChan, errChan, cancel, nil
 }
 
-func (c *Client) SendMessage(ctx context.Context, token string, roomID, userID uuid.UUID, content string) error {
-	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", fmt.Sprintf("Bearer %s", token))
-	_, err := c.client.SendMessage(ctx, &chat.SendMessageRequest{
-		RoomId:  roomID.String(),
-		UserId:  userID.String(),
-		Content: content,
-	})
-	if err != nil {
-		return errors.Wrap(err, "failed to send message")
-	}
-	return nil
-}
-
+// Helper functions for proto conversion.
 func protoToMessage(m *chat.Message) (*entities.Message, error) {
 	messageID, err := uuid.Parse(m.Id)
 	if err != nil {
@@ -150,15 +179,15 @@ func protoToMessage(m *chat.Message) (*entities.Message, error) {
 func protoToChatEvent(e *chat.ChatEvent) (*entities.ChatEvent, error) {
 	roomID, err := uuid.Parse(e.RoomId)
 	if err != nil {
-		return nil, errors.Wrap(err, "invalid room ID in event")
+		return nil, errors.Wrap(err, "invalid room ID")
 	}
 
 	userID, err := uuid.Parse(e.UserId)
 	if err != nil {
-		return nil, errors.Wrap(err, "invalid user ID in event")
+		return nil, errors.Wrap(err, "invalid user ID")
 	}
 
-	chatEvent := &entities.ChatEvent{
+	event := &entities.ChatEvent{
 		RoomID:    roomID,
 		UserID:    userID,
 		Type:      protoToEventType(e.EventType),
@@ -166,14 +195,14 @@ func protoToChatEvent(e *chat.ChatEvent) (*entities.ChatEvent, error) {
 	}
 
 	if e.Message != nil {
-		message, err := protoToMessage(e.Message)
+		msg, err := protoToMessage(e.Message)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to convert message in event")
+			return nil, errors.Wrap(err, "failed to convert message")
 		}
-		chatEvent.Message = message
+		event.Message = msg
 	}
 
-	return chatEvent, nil
+	return event, nil
 }
 
 func protoToEventType(t chat.ChatEvent_EventType) entities.EventType {
@@ -187,8 +216,4 @@ func protoToEventType(t chat.ChatEvent_EventType) entities.EventType {
 	default:
 		return entities.EventTypeUnknown
 	}
-}
-
-func WithAuthToken(ctx context.Context, token string) context.Context {
-	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
 }

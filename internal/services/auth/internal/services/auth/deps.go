@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"time"
 
 	"github.com/HexArch/go-chat/internal/services/auth/internal/entities"
 	"github.com/google/uuid"
@@ -22,4 +23,16 @@ type TokenStorage interface {
 type Deps struct {
 	UserStorage  UserStorage
 	TokenStorage TokenStorage
+	Secrets      TokenSecrets
+	TokenTTL     TokenTTL
+}
+
+type TokenSecrets struct {
+	AccessTokenSecret  string
+	RefreshTokenSecret string
+}
+
+type TokenTTL struct {
+	AccessTokenTTL  time.Duration
+	RefreshTokenTTL time.Duration
 }

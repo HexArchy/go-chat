@@ -8,6 +8,7 @@ import (
 	"github.com/HexArch/go-chat/internal/services/chat/internal/clients/website"
 	"github.com/HexArch/go-chat/internal/services/chat/internal/config"
 	"github.com/HexArch/go-chat/internal/services/chat/internal/controllers"
+	"github.com/HexArch/go-chat/internal/services/chat/internal/controllers/middleware"
 	"github.com/HexArch/go-chat/internal/services/chat/internal/services/chat"
 	chatstorage "github.com/HexArch/go-chat/internal/services/chat/internal/services/chat/storage"
 	connectuc "github.com/HexArch/go-chat/internal/services/chat/internal/use-cases/connect"
@@ -42,12 +43,12 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 	sqlDB.SetMaxIdleConns(cfg.Engines.Storage.MaxIdleConns)
 	sqlDB.SetConnMaxLifetime(cfg.Engines.Storage.ConnMaxLifetime)
 
-	authClient, err := auth.NewClient(cfg.AuthService.Address, cfg.AuthService.ServiceToken)
+	authClient, err := auth.NewClient(logger, cfg.AuthService.Address, cfg.AuthService.ServiceToken)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create auth client")
 	}
 
-	websiteClient, err := website.NewClient(cfg.WebsiteService.Address, cfg.WebsiteService.ServiceToken)
+	websiteClient, err := website.NewClient(logger, cfg.WebsiteService.Address, cfg.WebsiteService.ServiceToken)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create website client")
 	}
@@ -61,23 +62,19 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 	connectUC := connectuc.New(connectuc.Deps{
 		WebsiteService: websiteClient,
 		ChatService:    chatService,
-		AuthService:    authClient,
 	})
 
 	disconnectUC := disconnectuc.New(disconnectuc.Deps{
 		ChatService: chatService,
-		AuthService: authClient,
 	})
 
 	sendMessageUC := sendmessageuc.New(sendmessageuc.Deps{
 		ChatService: chatService,
-		AuthService: authClient,
 	})
 
 	getMessagesUC := getmessagesuc.New(getmessagesuc.Deps{
 		ChatService:    chatService,
 		WebsiteService: websiteClient,
-		AuthService:    authClient,
 	})
 
 	chatServiceServer := controllers.NewChatServiceServer(
@@ -95,6 +92,7 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 		logger,
 		cfg,
 		chatServiceServer,
+		middleware.NewAuthMiddleware(logger, authClient),
 	)
 
 	return &App{

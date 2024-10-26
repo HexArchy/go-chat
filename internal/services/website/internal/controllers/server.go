@@ -4,12 +4,13 @@ import (
 	"context"
 	"net"
 	"net/http"
-	"time"
 
 	"github.com/HexArch/go-chat/internal/api/generated/go-chat/api/proto/website"
 	"github.com/HexArch/go-chat/internal/services/website/internal/clients/auth"
 	"github.com/HexArch/go-chat/internal/services/website/internal/config"
+	"github.com/HexArch/go-chat/internal/services/website/internal/controllers/middleware"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/pkg/errors"
 	"github.com/rs/cors"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -17,70 +18,86 @@ import (
 )
 
 type Server struct {
-	grpcServer *grpc.Server
-	httpServer *http.Server
-	logger     *zap.Logger
-	cfg        *config.Config
-	websiteSvc *WebsiteServiceServer
-	authClient *auth.AuthClient
+	logger      *zap.Logger
+	cfg         *config.Config
+	grpcServer  *grpc.Server
+	httpServer  *http.Server
+	authClient  *auth.AuthClient
+	roomService *WebsiteServiceServer
 }
 
-// NewServer initializes a new Server for the website microservice.
-func NewServer(logger *zap.Logger, cfg *config.Config, websiteSvc *WebsiteServiceServer, authClient *auth.AuthClient) *Server {
+func NewServer(
+	logger *zap.Logger,
+	cfg *config.Config,
+	authClient *auth.AuthClient,
+	roomService *WebsiteServiceServer,
+) *Server {
 	return &Server{
-		logger:     logger,
-		cfg:        cfg,
-		websiteSvc: websiteSvc,
-		authClient: authClient,
+		logger:      logger,
+		cfg:         cfg,
+		authClient:  authClient,
+		roomService: roomService,
 	}
 }
 
-// Start launches the gRPC and HTTP servers.
 func (s *Server) Start(ctx context.Context) error {
-	grpcAddress := s.cfg.Handlers.GRPC.FullAddress()
-	httpAddress := s.cfg.Handlers.HTTP.FullAddress()
+	// Initialize middleware.
+	authMiddleware := middleware.NewAuthMiddleware(s.logger, s.authClient)
 
-	lis, err := net.Listen("tcp", grpcAddress)
-	if err != nil {
-		return err
-	}
-
+	// Create gRPC server with auth middleware.
 	s.grpcServer = grpc.NewServer(
-		grpc.UnaryInterceptor(AuthInterceptor(s.authClient)),
+		grpc.UnaryInterceptor(authMiddleware.UnaryInterceptor()),
 	)
-	website.RegisterRoomServiceServer(s.grpcServer, s.websiteSvc)
+	website.RegisterRoomServiceServer(s.grpcServer, s.roomService)
+
+	// Start gRPC server.
+	lis, err := net.Listen("tcp", s.cfg.Handlers.GRPC.FullAddress())
+	if err != nil {
+		return errors.Wrap(err, "failed to create listener")
+	}
 
 	go func() {
-		s.logger.Info("Starting gRPC server", zap.String("address", grpcAddress))
+		s.logger.Info("Starting gRPC server", zap.String("address", s.cfg.Handlers.GRPC.FullAddress()))
 		if err := s.grpcServer.Serve(lis); err != nil {
 			s.logger.Fatal("Failed to serve gRPC", zap.Error(err))
 		}
 	}()
 
-	// HTTP server for gRPC-Gateway.
-	mux := runtime.NewServeMux()
+	// Configure gRPC gateway.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:8081"},
+	mux := runtime.NewServeMux()
+	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+
+	if err := website.RegisterRoomServiceHandlerFromEndpoint(
+		ctx,
+		mux,
+		s.cfg.Handlers.GRPC.FullAddress(),
+		opts,
+	); err != nil {
+		return errors.Wrap(err, "failed to register gRPC gateway")
+	}
+
+	// Configure CORS.
+	corsHandler := cors.New(cors.Options{
+		AllowedOrigins:   []string{"localhost:8000"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type", "Authorization"},
 		AllowCredentials: true,
 	})
 
-	handler := c.Handler(mux)
-
-	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
-	if err := website.RegisterRoomServiceHandlerFromEndpoint(ctx, mux, grpcAddress, opts); err != nil {
-		return err
-	}
-
+	// Create HTTP server.
 	s.httpServer = &http.Server{
-		Addr:    httpAddress,
-		Handler: handler,
+		Addr:         s.cfg.Handlers.HTTP.FullAddress(),
+		Handler:      corsHandler.Handler(mux),
+		ReadTimeout:  s.cfg.Handlers.HTTP.ReadTimeout,
+		WriteTimeout: s.cfg.Handlers.HTTP.WriteTimeout,
 	}
 
+	// Start HTTP server,
 	go func() {
-		s.logger.Info("Starting HTTP server", zap.String("address", httpAddress))
+		s.logger.Info("Starting HTTP server", zap.String("address", s.cfg.Handlers.HTTP.FullAddress()))
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			s.logger.Fatal("Failed to serve HTTP", zap.Error(err))
 		}
@@ -89,13 +106,19 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully shuts down the gRPC and HTTP servers.
 func (s *Server) Stop(ctx context.Context) error {
+	// Gracefully stop gRPC server.
 	s.grpcServer.GracefulStop()
-	ctxShutdown, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if err := s.httpServer.Shutdown(ctxShutdown); err != nil {
-		return err
+
+	// Gracefully stop HTTP server.
+	if err := s.httpServer.Shutdown(ctx); err != nil {
+		return errors.Wrap(err, "failed to shutdown HTTP server")
 	}
+
+	// Close auth client connection.
+	if err := s.authClient.Close(); err != nil {
+		return errors.Wrap(err, "failed to close auth client")
+	}
+
 	return nil
 }

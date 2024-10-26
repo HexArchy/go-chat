@@ -2,6 +2,7 @@ package getmessages
 
 import (
 	"context"
+	"sync"
 
 	"github.com/HexArch/go-chat/internal/services/chat/internal/entities"
 	"github.com/google/uuid"
@@ -11,23 +12,15 @@ import (
 type UseCase struct {
 	chatService    ChatService
 	websiteService WebsiteService
-	authService    AuthService
 }
 
 func New(deps Deps) *UseCase {
 	return &UseCase{
 		chatService:    deps.ChatService,
 		websiteService: deps.WebsiteService,
-		authService:    deps.AuthService,
 	}
 }
-
-func (uc *UseCase) Execute(ctx context.Context, token string, roomID uuid.UUID, limit, offset int) ([]*entities.Message, error) {
-	_, err := uc.authService.ValidateToken(ctx, token)
-	if err != nil {
-		return nil, errors.Wrap(err, "invalid token")
-	}
-
+func (uc *UseCase) Execute(ctx context.Context, roomID uuid.UUID, limit, offset int) ([]*entities.Message, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -38,17 +31,34 @@ func (uc *UseCase) Execute(ctx context.Context, token string, roomID uuid.UUID, 
 		offset = 0
 	}
 
-	exists, err := uc.websiteService.RoomExists(ctx, roomID)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to check room existence")
+	var wg sync.WaitGroup
+	var existsErr, messagesErr error
+	var exists bool
+	var messages []*entities.Message
+
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		exists, existsErr = uc.websiteService.RoomExists(ctx, roomID)
+	}()
+
+	go func() {
+		defer wg.Done()
+		messages, messagesErr = uc.chatService.GetMessages(ctx, roomID, limit, offset)
+	}()
+
+	wg.Wait()
+
+	if existsErr != nil {
+		return nil, errors.Wrap(existsErr, "failed to check room existence")
 	}
 	if !exists {
 		return nil, entities.ErrRoomNotFound
 	}
 
-	messages, err := uc.chatService.GetMessages(ctx, roomID, limit, offset)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get messages")
+	if messagesErr != nil {
+		return nil, errors.Wrap(messagesErr, "failed to get messages")
 	}
 
 	return messages, nil

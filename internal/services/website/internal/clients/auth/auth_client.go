@@ -2,64 +2,76 @@ package auth
 
 import (
 	"context"
+	"sync"
 
 	"github.com/HexArch/go-chat/internal/api/generated/go-chat/api/proto/auth"
-	"github.com/golang-jwt/jwt"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+)
+
+const (
+	serviceTokenHeader = "X-Service-Token"
 )
 
 type AuthClient struct {
-	client    auth.AuthServiceClient
-	jwtSecret []byte
+	logger       *zap.Logger
+	client       auth.AuthServiceClient
+	conn         *grpc.ClientConn
+	serviceToken string
+	mutex        sync.RWMutex
 }
 
-func NewAuthClient(authServiceAddr string, jwtSecret []byte) (*AuthClient, error) {
-	conn, err := grpc.NewClient(authServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+type ValidateResponse struct {
+	UserID      string
+	Permissions []string
+}
+
+func NewAuthClient(logger *zap.Logger, authServiceAddr string, serviceToken string) (*AuthClient, error) {
+	conn, err := grpc.NewClient(
+		authServiceAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to connect to AuthService")
 	}
 
-	client := auth.NewAuthServiceClient(conn)
-
 	return &AuthClient{
-		client:    client,
-		jwtSecret: jwtSecret,
+		logger:       logger,
+		client:       auth.NewAuthServiceClient(conn),
+		conn:         conn,
+		serviceToken: serviceToken,
+		mutex:        sync.RWMutex{},
 	}, nil
 }
 
-// ValidateToken parses the JWT token, validates it and retrieves the user information.
-func (c *AuthClient) ValidateToken(ctx context.Context, tokenString string) (*auth.User, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("invalid signing method")
-		}
-		return c.jwtSecret, nil
+// ValidateToken validates the access token using auth service.
+func (c *AuthClient) ValidateToken(ctx context.Context, token string) (*ValidateResponse, error) {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+
+	// Create context with service token.
+	md := metadata.New(map[string]string{
+		"Authorization": "Bearer " + token,
 	})
+	ctxWithMetadata := metadata.NewOutgoingContext(ctx, md)
 
-	if err != nil || !token.Valid {
-		return nil, errors.Wrap(err, "invalid token")
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok || !token.Valid {
-		return nil, errors.New("invalid token claims")
-	}
-
-	userID, ok := claims["user_id"].(string)
-	if !ok {
-		return nil, errors.New("invalid token: user_id not found")
-	}
-
-	getUserRequest := &auth.GetUserRequest{
-		UserId: userID,
-	}
-
-	user, err := c.client.GetUser(ctx, getUserRequest)
+	resp, err := c.client.ValidateToken(ctxWithMetadata, &auth.ValidateTokenRequest{
+		Token: token,
+	})
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get user from AuthService")
+		return nil, errors.Wrap(err, "failed to validate token")
 	}
 
-	return user, nil
+	return &ValidateResponse{
+		UserID:      resp.User.Id,
+		Permissions: resp.Permissions,
+	}, nil
+}
+
+// Close closes the gRPC connection.
+func (c *AuthClient) Close() error {
+	return c.conn.Close()
 }

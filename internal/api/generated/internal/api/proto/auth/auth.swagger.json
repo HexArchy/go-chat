@@ -71,7 +71,7 @@
         ]
       }
     },
-    "/api/v1/auth/refresh-token": {
+    "/api/v1/auth/refresh": {
       "post": {
         "operationId": "AuthService_RefreshToken",
         "responses": {
@@ -105,6 +105,7 @@
     },
     "/api/v1/auth/register": {
       "post": {
+        "summary": "Auth endpoints",
         "operationId": "AuthService_RegisterUser",
         "responses": {
           "200": {
@@ -128,6 +129,38 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/authRegisterUserRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/api/v1/auth/validate": {
+      "post": {
+        "operationId": "AuthService_ValidateToken",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/authValidateTokenResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/authValidateTokenRequest"
             }
           }
         ],
@@ -176,6 +209,7 @@
     },
     "/api/v1/users/{userId}": {
       "get": {
+        "summary": "User management endpoints",
         "operationId": "AuthService_GetUser",
         "responses": {
           "200": {
@@ -311,6 +345,10 @@
             "type": "object",
             "$ref": "#/definitions/authUser"
           }
+        },
+        "total": {
+          "type": "integer",
+          "format": "int32"
         }
       }
     },
@@ -333,6 +371,14 @@
         },
         "refreshToken": {
           "type": "string"
+        },
+        "accessTokenExpiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "refreshTokenExpiresAt": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },
@@ -352,6 +398,14 @@
         },
         "refreshToken": {
           "type": "string"
+        },
+        "accessTokenExpiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "refreshTokenExpiresAt": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },
@@ -414,6 +468,28 @@
         "updatedAt": {
           "type": "string",
           "format": "date-time"
+        }
+      }
+    },
+    "authValidateTokenRequest": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string"
+        }
+      }
+    },
+    "authValidateTokenResponse": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/authUser"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

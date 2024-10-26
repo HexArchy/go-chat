@@ -16,11 +16,16 @@ func New(deps Deps) *UseCase {
 	}
 }
 
-func (uc *UseCase) Execute(ctx context.Context, email, password string) (string, string, error) {
-	accessToken, refreshToken, err := uc.authService.Login(ctx, email, password)
+func (uc *UseCase) Execute(ctx context.Context, email, password string) (*LoginResult, error) {
+	tokenPair, err := uc.authService.Login(ctx, email, password)
 	if err != nil {
-		return "", "", errors.Wrap(err, "failed to login")
+		return nil, errors.Wrap(err, "failed to login")
 	}
 
-	return accessToken, refreshToken, nil
+	return &LoginResult{
+		AccessToken:           tokenPair.AccessToken,
+		RefreshToken:          tokenPair.RefreshToken,
+		AccessTokenExpiresAt:  tokenPair.AccessTokenExpiresAt,
+		RefreshTokenExpiresAt: tokenPair.RefreshTokenExpiresAt,
+	}, nil
 }

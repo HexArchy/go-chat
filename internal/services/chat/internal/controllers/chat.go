@@ -7,6 +7,7 @@ import (
 
 	"github.com/HexArch/go-chat/internal/api/generated/go-chat/api/proto/chat"
 	"github.com/HexArch/go-chat/internal/services/chat/internal/clients/auth"
+	"github.com/HexArch/go-chat/internal/services/chat/internal/controllers/middleware"
 	"github.com/HexArch/go-chat/internal/services/chat/internal/entities"
 	"github.com/HexArch/go-chat/internal/services/chat/internal/use-cases/connect"
 	"github.com/HexArch/go-chat/internal/services/chat/internal/use-cases/disconnect"
@@ -14,7 +15,6 @@ import (
 	sendmessage "github.com/HexArch/go-chat/internal/services/chat/internal/use-cases/send-message"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -22,13 +22,12 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// WebSocketConnection реализует интерфейс ChatConnection
-type WebSocketConnection struct {
-	conn *websocket.Conn
-	mu   sync.Mutex
-}
+const (
+	writeTimeout = 10 * time.Second
+	readTimeout  = 60 * time.Second
+	pingPeriod   = 30 * time.Second
+)
 
-// WSMessage представляет структуру сообщения WebSocket
 type WSMessage struct {
 	Type    string `json:"type"`
 	RoomID  string `json:"room_id"`
@@ -36,7 +35,6 @@ type WSMessage struct {
 	Token   string `json:"token"`
 }
 
-// ChatServiceServer реализует gRPC сервер чата
 type ChatServiceServer struct {
 	chat.UnimplementedChatServiceServer
 	logger        *zap.Logger
@@ -68,65 +66,46 @@ func NewChatServiceServer(
 	}
 }
 
-func (w *WebSocketConnection) SendEvent(event *entities.ChatEvent) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	return w.conn.WriteJSON(event)
-}
-
-func (w *WebSocketConnection) Close() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	return w.conn.Close()
-}
-
 func (s *ChatServiceServer) GetMessages(ctx context.Context, req *chat.GetMessagesRequest) (*chat.GetMessagesResponse, error) {
-	token := getTokenFromContext(ctx)
+	userID, err := middleware.GetUserIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "user not authenticated")
+	}
+
 	roomID, err := uuid.Parse(req.RoomId)
 	if err != nil {
-		return nil, errors.Wrap(err, "invalid room ID")
+		return nil, status.Error(codes.InvalidArgument, "invalid room ID")
 	}
 
-	messages, err := s.getMessagesUC.Execute(ctx, token, roomID, int(req.Limit), int(req.Offset))
+	messages, err := s.getMessagesUC.Execute(ctx, roomID, int(req.Limit), int(req.Offset))
 	if err != nil {
-		return nil, err
+		s.logger.Error("Failed to get messages",
+			zap.Error(err),
+			zap.String("user_id", userID.String()),
+			zap.String("room_id", roomID.String()),
+		)
+		return nil, status.Error(codes.Internal, "failed to get messages")
 	}
 
-	response := &chat.GetMessagesResponse{
-		Messages: make([]*chat.Message, len(messages)),
-	}
-
-	for i, msg := range messages {
-		response.Messages[i] = &chat.Message{
-			Id:        msg.ID.String(),
-			RoomId:    msg.RoomID.String(),
-			UserId:    msg.UserID.String(),
-			Content:   msg.Content,
-			CreatedAt: timestamppb.New(msg.CreatedAt),
-		}
-	}
-
-	return response, nil
+	return &chat.GetMessagesResponse{
+		Messages: messagesToProto(messages),
+	}, nil
 }
 
 func (s *ChatServiceServer) HandleWebSocket(ctx context.Context, wsConn *websocket.Conn) {
-	defer wsConn.Close()
-
 	var initMsg WSMessage
 	if err := wsConn.ReadJSON(&initMsg); err != nil {
 		s.logger.Error("Failed to read init message", zap.Error(err))
 		return
 	}
 
-	userID, err := s.getUserIDFromToken(initMsg.Token)
+	// Validate token.
+	resp, err := s.authClient.ValidateToken(ctx, initMsg.Token)
 	if err != nil {
 		s.logger.Error("Invalid token",
 			zap.Error(err),
 			zap.String("token", initMsg.Token),
 		)
-
 		wsConn.WriteJSON(map[string]string{
 			"type":    "error",
 			"message": "Invalid authentication token",
@@ -144,12 +123,18 @@ func (s *ChatServiceServer) HandleWebSocket(ctx context.Context, wsConn *websock
 		return
 	}
 
-	conn := &WebSocketConnection{conn: wsConn}
+	conn := &WebSocketConnection{
+		conn:      wsConn,
+		writeChan: make(chan *entities.ChatEvent, 100),
+		done:      make(chan struct{}),
+	}
 
-	if err := s.connectUC.Execute(ctx, initMsg.Token, roomID, conn); err != nil {
+	go conn.writeLoop()
+
+	if err := s.connectUC.Execute(ctx, resp.UserID, roomID, conn); err != nil {
 		s.logger.Error("Failed to connect to chat",
 			zap.Error(err),
-			zap.String("user_id", userID.String()),
+			zap.String("user_id", resp.UserID.String()),
 			zap.String("room_id", roomID.String()),
 		)
 		wsConn.WriteJSON(map[string]string{
@@ -160,18 +145,19 @@ func (s *ChatServiceServer) HandleWebSocket(ctx context.Context, wsConn *websock
 	}
 
 	s.activeConnMu.Lock()
-	s.activeConns[userID] = conn
+	s.activeConns[resp.UserID] = conn
 	s.activeConnMu.Unlock()
 
 	defer func() {
+		close(conn.done)
 		s.activeConnMu.Lock()
-		delete(s.activeConns, userID)
+		delete(s.activeConns, resp.UserID)
 		s.activeConnMu.Unlock()
 
-		if err := s.disconnectUC.Execute(ctx, initMsg.Token, roomID); err != nil {
+		if err := s.disconnectUC.Execute(ctx, resp.UserID, roomID); err != nil {
 			s.logger.Error("Failed to disconnect from chat",
 				zap.Error(err),
-				zap.String("user_id", userID.String()),
+				zap.String("user_id", resp.UserID.String()),
 				zap.String("room_id", roomID.String()),
 			)
 		}
@@ -179,8 +165,15 @@ func (s *ChatServiceServer) HandleWebSocket(ctx context.Context, wsConn *websock
 
 	wsConn.WriteJSON(map[string]string{
 		"type":    "connected",
-		"user_id": userID.String(),
+		"user_id": resp.UserID.String(),
 		"room_id": roomID.String(),
+	})
+
+	wsConn.SetReadLimit(1024 * 1024) // 1MB
+	wsConn.SetReadDeadline(time.Now().Add(readTimeout))
+	wsConn.SetPongHandler(func(string) error {
+		wsConn.SetReadDeadline(time.Now().Add(readTimeout))
+		return nil
 	})
 
 	for {
@@ -189,18 +182,19 @@ func (s *ChatServiceServer) HandleWebSocket(ctx context.Context, wsConn *websock
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				s.logger.Error("WebSocket error",
 					zap.Error(err),
-					zap.String("user_id", userID.String()),
+					zap.String("user_id", resp.UserID.String()),
 					zap.String("room_id", roomID.String()),
 				)
 			}
 			break
 		}
 
-		currentUserID, err := s.getUserIDFromToken(msg.Token)
-		if err != nil || currentUserID != userID {
+		// Revalidate token
+		currentResp, err := s.authClient.ValidateToken(ctx, msg.Token)
+		if err != nil || currentResp.UserID != resp.UserID {
 			s.logger.Error("Invalid token in message",
 				zap.Error(err),
-				zap.String("user_id", userID.String()),
+				zap.String("user_id", resp.UserID.String()),
 			)
 			wsConn.WriteJSON(map[string]string{
 				"type":    "error",
@@ -211,10 +205,10 @@ func (s *ChatServiceServer) HandleWebSocket(ctx context.Context, wsConn *websock
 
 		switch msg.Type {
 		case "message":
-			if err := s.sendMessageUC.Execute(ctx, msg.Token, roomID, msg.Content); err != nil {
+			if err := s.sendMessageUC.Execute(ctx, currentResp.UserID, roomID, msg.Content); err != nil {
 				s.logger.Error("Failed to send message",
 					zap.Error(err),
-					zap.String("user_id", userID.String()),
+					zap.String("user_id", resp.UserID.String()),
 					zap.String("room_id", roomID.String()),
 				)
 				wsConn.WriteJSON(map[string]string{
@@ -227,40 +221,30 @@ func (s *ChatServiceServer) HandleWebSocket(ctx context.Context, wsConn *websock
 	}
 }
 
-func (s *ChatServiceServer) getUserIDFromToken(token string) (uuid.UUID, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	userID, err := s.authClient.ValidateToken(ctx, token)
-	if err != nil {
-		s.logger.Error("Failed to validate token",
-			zap.Error(err),
-			zap.String("token", token),
-		)
-		return uuid.Nil, errors.Wrap(err, "failed to validate token")
-	}
-
-	return userID, nil
-}
-
 func (s *ChatServiceServer) SendMessage(ctx context.Context, req *chat.SendMessageRequest) (*emptypb.Empty, error) {
-	token := getTokenFromContext(ctx)
-	if token == "" {
-		return nil, status.Error(codes.Unauthenticated, "authentication token is required")
+	userID, err := middleware.GetUserIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "user not authenticated")
 	}
 
 	roomID, err := uuid.Parse(req.RoomId)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid room ID: %v", err)
+		return nil, status.Error(codes.InvalidArgument, "invalid room ID")
 	}
 
-	if err := s.sendMessageUC.Execute(ctx, token, roomID, req.Content); err != nil {
-		return nil, err
+	if err := s.sendMessageUC.Execute(ctx, userID, roomID, req.Content); err != nil {
+		s.logger.Error("Failed to send message",
+			zap.Error(err),
+			zap.String("user_id", userID.String()),
+			zap.String("room_id", roomID.String()),
+		)
+		return nil, status.Error(codes.Internal, "failed to send message")
 	}
+
 	return &emptypb.Empty{}, nil
 }
 
-func (s *ChatServiceServer) broadcastEvent(ctx context.Context, event *entities.ChatEvent) {
+func (s *ChatServiceServer) broadcastEvent(event *entities.ChatEvent) {
 	s.activeConnMu.RLock()
 	defer s.activeConnMu.RUnlock()
 
@@ -275,4 +259,18 @@ func (s *ChatServiceServer) broadcastEvent(ctx context.Context, event *entities.
 			}
 		}(userID, conn)
 	}
+}
+
+func messagesToProto(messages []*entities.Message) []*chat.Message {
+	result := make([]*chat.Message, len(messages))
+	for i, msg := range messages {
+		result[i] = &chat.Message{
+			Id:        msg.ID.String(),
+			RoomId:    msg.RoomID.String(),
+			UserId:    msg.UserID.String(),
+			Content:   msg.Content,
+			CreatedAt: timestamppb.New(msg.CreatedAt),
+		}
+	}
+	return result
 }

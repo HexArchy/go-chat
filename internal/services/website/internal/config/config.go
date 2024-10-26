@@ -125,7 +125,7 @@ func loadDefaults() error {
 		"handlers.http.port":                "8080",
 		"handlers.grpc.address":             "localhost",
 		"handlers.grpc.port":                "9090",
-		"auth_service.address":              "localhost:9091",
+		"auth_service.address":              "auth-service:9090",
 		"auth_service.jwt_secret":           "your_jwt_secret_key",
 		"vault.timeout":                     5 * time.Minute,
 		"graceful_shutdown":                 15 * time.Second,

@@ -4,18 +4,29 @@ import (
 	"context"
 	"encoding/gob"
 	"net/http"
+	"time"
 
 	"github.com/HexArch/go-chat/internal/pkg/graceful-shutdown"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/clients/auth"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/clients/chat"
+	"github.com/HexArch/go-chat/internal/services/frontend/internal/clients/shared"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/clients/website"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/config"
 	httpadmin "github.com/HexArch/go-chat/internal/services/frontend/internal/controllers/http"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/entities"
+	tokenmanager "github.com/HexArch/go-chat/internal/services/frontend/internal/services/token-manager"
+	authuc "github.com/HexArch/go-chat/internal/services/frontend/internal/use-cases/auth"
+	profileuc "github.com/HexArch/go-chat/internal/services/frontend/internal/use-cases/profile"
+	roomsuc "github.com/HexArch/go-chat/internal/services/frontend/internal/use-cases/rooms"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+)
+
+const (
+	sessionName = "chat_session"
+	tokenKey    = "token"
 )
 
 type App struct {
@@ -29,44 +40,61 @@ type App struct {
 
 func init() {
 	gob.Register(&entities.User{})
+	gob.Register(&tokenmanager.SessionData{})
 }
 
 func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, error) {
-	authClient, err := auth.NewClient(cfg.AuthService.Address)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create auth client")
-	}
-
-	websiteClient, err := website.NewClient(cfg.WebsiteService.Address)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create website client")
-	}
-
-	chatClient, err := chat.NewClient(cfg.ChatService.Address)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create chat client")
-	}
-
 	store := sessions.NewCookieStore([]byte(cfg.Session.Secret))
 	store.Options = &sessions.Options{
 		Path:     "/",
 		MaxAge:   int(cfg.Session.MaxAge.Seconds()),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   false,
 		SameSite: http.SameSiteLaxMode,
+		Domain:   "localhost",
 	}
 
-	controller := httpadmin.New(
-		logger,
-		cfg,
-		authClient,
-		chatClient,
-		websiteClient,
-		store,
+	authClient, err := auth.NewClient(logger, cfg.AuthService.Address)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create auth client")
+	}
+
+	tokenManager := tokenmanager.NewTokenManager(authClient, logger, store, sessionName)
+
+	authInterceptor := shared.NewAuthInterceptor(logger, tokenManager, store, sessionName)
+
+	websiteClient, err := website.NewClient(logger, cfg.WebsiteService.Address, authInterceptor, &shared.RetryConfig{
+		MaxAttempts:     2,
+		InitialInterval: 20 * time.Millisecond,
+		MaxInterval:     1 * time.Second,
+		Multiplier:      0.24,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create website client")
+	}
+
+	chatClient, err := chat.NewClient(logger, cfg.ChatService.Address, authInterceptor)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create chat client")
+	}
+
+	controller := httpadmin.NewController(
+		logger, cfg,
+		authuc.NewLoginUseCase(authClient, logger),
+		authuc.NewRegisterUseCase(authClient, logger),
+		authuc.NewLogoutUseCase(authClient, logger),
+		profileuc.NewGetProfileUseCase(authClient, logger),
+		profileuc.NewEditProfileUseCase(authClient, logger),
+		roomsuc.NewCreateRoomUseCase(websiteClient, logger),
+		roomsuc.NewDeleteRoomUseCase(websiteClient, logger),
+		roomsuc.NewListRoomsUseCase(websiteClient, logger),
+		roomsuc.NewSearchRoomsUseCase(websiteClient, logger),
+		roomsuc.NewViewRoomUseCase(websiteClient, chatClient, logger),
+		roomsuc.NewManageWebSocketUseCase(chatClient, logger),
+		tokenManager, store, sessionName, tokenKey,
 	)
 
-	router := mux.NewRouter()
-	controller.RegisterRoutes(router)
+	router := controller.SetupRoutes()
 
 	grShutdown := graceful.NewShutdown(logger)
 

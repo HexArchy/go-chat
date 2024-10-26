@@ -37,6 +37,8 @@ message LoginRequest {
 message LoginResponse {
   string access_token = 1;
   string refresh_token = 2;
+  google.protobuf.Timestamp access_token_expires_at = 3;
+  google.protobuf.Timestamp refresh_token_expires_at = 4;
 }
 
 message RefreshTokenRequest {
@@ -46,6 +48,8 @@ message RefreshTokenRequest {
 message RefreshTokenResponse {
   string access_token = 1;
   string refresh_token = 2;
+  google.protobuf.Timestamp access_token_expires_at = 3;
+  google.protobuf.Timestamp refresh_token_expires_at = 4;
 }
 
 message GetUserRequest {
@@ -70,16 +74,26 @@ message DeleteUserRequest {
 message LogoutRequest {}
 
 message GetUsersRequest {
-    int32 limit = 1;
-    int32 offset = 2;
-  }
+  int32 limit = 1;
+  int32 offset = 2;
+}
 
-  message GetUsersResponse {
-    repeated User users = 1;
-  }
+message GetUsersResponse {
+  repeated User users = 1;
+  int32 total = 2;
+}
 
+message ValidateTokenRequest {
+  string token = 1;
+}
+
+message ValidateTokenResponse {
+  User user = 1;
+  repeated string permissions = 2;
+}
 
 service AuthService {
+  // Auth endpoints
   rpc RegisterUser(RegisterUserRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
       post: "/api/v1/auth/register"
@@ -96,14 +110,34 @@ service AuthService {
 
   rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse) {
     option (google.api.http) = {
-      post: "/api/v1/auth/refresh-token"
+      post: "/api/v1/auth/refresh"
       body: "*"
     };
   }
 
+  rpc Logout(LogoutRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/v1/auth/logout"
+    };
+  }
+
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/auth/validate"
+      body: "*"
+    };
+  }
+
+  // User management endpoints
   rpc GetUser(GetUserRequest) returns (User) {
     option (google.api.http) = {
       get: "/api/v1/users/{user_id}"
+    };
+  }
+
+  rpc GetUsers(GetUsersRequest) returns (GetUsersResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/users"
     };
   }
 
@@ -117,18 +151,6 @@ service AuthService {
   rpc DeleteUser(DeleteUserRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
       delete: "/api/v1/users/{user_id}"
-    };
-  }
-
-  rpc Logout(LogoutRequest) returns (google.protobuf.Empty) {
-    option (google.api.http) = {
-      post: "/api/v1/auth/logout"
-    };
-  }
-
-  rpc GetUsers(GetUsersRequest) returns (GetUsersResponse) {
-    option (google.api.http) = {
-      get: "/api/v1/users"
     };
   }
 }

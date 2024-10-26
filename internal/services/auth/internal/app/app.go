@@ -60,11 +60,15 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 		auth.Deps{
 			UserStorage:  userStorage,
 			TokenStorage: tokenStorage,
+			Secrets: auth.TokenSecrets{
+				AccessTokenSecret:  cfg.Auth.JWT.AccessSecret,
+				RefreshTokenSecret: cfg.Auth.JWT.RefreshSecret,
+			},
+			TokenTTL: auth.TokenTTL{
+				AccessTokenTTL:  cfg.Auth.JWT.AccessExpiryHours * time.Hour,
+				RefreshTokenTTL: cfg.Auth.JWT.RefreshExpiryHours * time.Hour,
+			},
 		},
-		[]byte(cfg.Auth.JWT.AccessSecret),
-		[]byte(cfg.Auth.JWT.RefreshSecret),
-		cfg.Auth.JWT.AccessExpiryHours*time.Hour,
-		cfg.Auth.JWT.RefreshExpiryHours*time.Hour,
 	)
 
 	createUserUC := createuser.New(createuser.Deps{UserService: userService})
@@ -77,8 +81,8 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 	updateUserUC := updateuser.New(updateuser.Deps{UserService: userService})
 	deleteUserUC := deleteuser.New(deleteuser.Deps{UserService: userService})
 
-	// Инициализируем контроллеры
 	authServiceServer := controllers.NewAuthServiceServer(
+		logger,
 		createUserUC,
 		loginUC,
 		refreshTokenUC,

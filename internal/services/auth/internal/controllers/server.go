@@ -49,7 +49,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	s.grpcServer = grpc.NewServer(
-		grpc.UnaryInterceptor(AuthInterceptor(s.jwtSecret, s.authSvc.validateTokenUC, s.serviceToken)),
+		grpc.UnaryInterceptor(AuthInterceptor(s.logger, s.authSvc.validateTokenUC, s.serviceToken)),
 	)
 	auth.RegisterAuthServiceServer(s.grpcServer, s.authSvc)
 

@@ -17,8 +17,8 @@ func New(deps Deps) *UseCase {
 	}
 }
 
-func (uc *UseCase) Execute(ctx context.Context, tokenString string) (*entities.User, error) {
-	user, err := uc.authService.ValidateToken(ctx, tokenString)
+func (uc *UseCase) Execute(ctx context.Context, accessToken string) (*entities.User, error) {
+	user, err := uc.authService.Validate(ctx, accessToken)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to validate token")
 	}

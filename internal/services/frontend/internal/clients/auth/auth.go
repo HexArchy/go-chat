@@ -2,35 +2,46 @@ package auth
 
 import (
 	"context"
-	"fmt"
-	"strings"
+	"sync"
+	"time"
 
 	"github.com/HexArch/go-chat/internal/api/generated/go-chat/api/proto/auth"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/entities"
-	"github.com/golang-jwt/jwt"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 )
 
-type Client struct {
-	client auth.AuthServiceClient
-	conn   *grpc.ClientConn
+type TokenResponse struct {
+	AccessToken           string
+	RefreshToken          string
+	AccessTokenExpiresAt  time.Time
+	RefreshTokenExpiresAt time.Time
 }
 
-func NewClient(address string) (*Client, error) {
-	conn, err := grpc.NewClient(address,
+type Client struct {
+	logger *zap.Logger
+	client auth.AuthServiceClient
+	conn   *grpc.ClientConn
+	mutex  sync.RWMutex
+}
+
+func NewClient(logger *zap.Logger, address string) (*Client, error) {
+	conn, err := grpc.NewClient(
+		address,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create gRPC connection")
+		return nil, errors.Wrap(err, "failed to connect to auth service")
 	}
 
 	return &Client{
+		logger: logger,
 		client: auth.NewAuthServiceClient(conn),
 		conn:   conn,
+		mutex:  sync.RWMutex{},
 	}, nil
 }
 
@@ -40,6 +51,9 @@ func (c *Client) Close() error {
 
 // Register creates a new user account.
 func (c *Client) Register(ctx context.Context, email, password, username, phone string, age int32, bio string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	_, err := c.client.RegisterUser(ctx, &auth.RegisterUserRequest{
 		Email:    email,
 		Password: password,
@@ -54,136 +68,181 @@ func (c *Client) Register(ctx context.Context, email, password, username, phone 
 	return nil
 }
 
-// Login authenticates user and returns access & refresh tokens.
-func (c *Client) Login(ctx context.Context, email, password string) (accessToken string, refreshToken string, err error) {
+// Login authenticates user and returns tokens.
+func (c *Client) Login(ctx context.Context, email, password string) (*TokenResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	resp, err := c.client.Login(ctx, &auth.LoginRequest{
 		Email:    email,
 		Password: password,
 	})
 	if err != nil {
-		return "", "", errors.Wrap(err, "failed to login")
+		return nil, errors.Wrap(err, "failed to login")
 	}
-	return resp.AccessToken, resp.RefreshToken, nil
+
+	return &TokenResponse{
+		AccessToken:           resp.AccessToken,
+		RefreshToken:          resp.RefreshToken,
+		AccessTokenExpiresAt:  resp.AccessTokenExpiresAt.AsTime(),
+		RefreshTokenExpiresAt: resp.RefreshTokenExpiresAt.AsTime(),
+	}, nil
 }
 
 // RefreshToken refreshes the access token using refresh token.
-func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (newAccessToken string, newRefreshToken string, err error) {
+func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (*TokenResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	resp, err := c.client.RefreshToken(ctx, &auth.RefreshTokenRequest{
 		RefreshToken: refreshToken,
 	})
 	if err != nil {
-		return "", "", errors.Wrap(err, "failed to refresh token")
+		return nil, errors.Wrap(err, "failed to refresh token")
 	}
-	return resp.AccessToken, resp.RefreshToken, nil
+
+	return &TokenResponse{
+		AccessToken:           resp.AccessToken,
+		RefreshToken:          resp.RefreshToken,
+		AccessTokenExpiresAt:  resp.AccessTokenExpiresAt.AsTime(),
+		RefreshTokenExpiresAt: resp.RefreshTokenExpiresAt.AsTime(),
+	}, nil
 }
 
-// GetUser returns user information by ID. Requires authentication.
-func (c *Client) GetUser(ctx context.Context, token, userID string) (*entities.User, error) {
-	ctx = addTokenToContext(ctx, token)
+// ValidateToken validates the access token and returns user info.
+func (c *Client) ValidateToken(ctx context.Context) (*entities.User, []string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
-	resp, err := c.client.GetUser(ctx, &auth.GetUserRequest{
-		UserId: userID,
+	token, err := entities.GetAccessTokenFromContext(ctx)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to get access token")
+	}
+
+	resp, err := c.client.ValidateToken(ctx, &auth.ValidateTokenRequest{
+		Token: token,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get user")
+		return nil, nil, errors.Wrap(err, "failed to validate token")
 	}
 
-	return protoToUser(resp), nil
+	user, err := protoToUser(resp.User)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to get user")
+	}
+
+	return user, resp.Permissions, nil
 }
 
-// ValidateToken validates the access token and returns the user.
-func (c *Client) ValidateToken(ctx context.Context, token string) (*entities.User, error) {
-	userID, err := extractUserIDFromToken(token)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to extract user ID from token")
-	}
-
-	ctx = addTokenToContext(ctx, token)
+// GetUser returns user information by ID.
+func (c *Client) GetUser(ctx context.Context, userID uuid.UUID) (*entities.User, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
 	resp, err := c.client.GetUser(ctx, &auth.GetUserRequest{
 		UserId: userID.String(),
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to validate token")
+		return nil, errors.Wrap(err, "failed to get user")
 	}
 
-	return protoToUser(resp), nil
+	user, err := protoToUser(resp)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get user")
+	}
+
+	return user, nil
 }
 
-// UpdateUser updates user information. Requires authentication.
-func (c *Client) UpdateUser(ctx context.Context, token string, userID string, updates map[string]interface{}) error {
-	ctx = addTokenToContext(ctx, token)
+// GetUser updates user information.
+func (c *Client) UpdateUser(ctx context.Context, userID string, updates map[string]interface{}) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	c.logger.Debug("UpdateUser: sending update request",
+		zap.String("user_id", userID))
 
 	req := &auth.UpdateUserRequest{
-		UserId: userID,
+		UserId:      userID,
+		Email:       "",
+		Password:    "",
+		Username:    "",
+		Phone:       "",
+		Age:         0,
+		Bio:         "",
+		Permissions: []string{},
 	}
 
 	for key, value := range updates {
 		switch key {
 		case "email":
-			req.Email = value.(string)
+			if v, ok := value.(string); ok {
+				req.Email = v
+			}
 		case "password":
-			req.Password = value.(string)
+			if v, ok := value.(string); ok {
+				req.Password = v
+			}
 		case "username":
-			req.Username = value.(string)
+			if v, ok := value.(string); ok {
+				req.Username = v
+			}
 		case "phone":
-			req.Phone = value.(string)
+			if v, ok := value.(string); ok {
+				req.Phone = v
+			}
 		case "age":
-			req.Age = int32(value.(int))
+			if v, ok := value.(int32); ok {
+				req.Age = v
+			} else if v, ok := value.(int); ok {
+				req.Age = int32(v)
+			}
 		case "bio":
-			req.Bio = value.(string)
+			if v, ok := value.(string); ok {
+				req.Bio = v
+			}
 		case "permissions":
-			req.Permissions = value.([]string)
+			if v, ok := value.([]string); ok {
+				req.Permissions = v
+			}
 		}
 	}
 
 	_, err := c.client.UpdateUser(ctx, req)
 	if err != nil {
+		c.logger.Error("UpdateUser: failed to update user", zap.Error(err))
 		return errors.Wrap(err, "failed to update user")
 	}
+
+	c.logger.Debug("UpdateUser: user updated successfully")
 	return nil
 }
 
-// Logout invalidates the user's refresh tokens. Requires authentication.
-func (c *Client) Logout(ctx context.Context, token string) error {
-	ctx = addTokenToContext(ctx, token)
+// Logout logs out a user by invalidating the access token.
+func (c *Client) Logout(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
-	_, err := c.client.Logout(ctx, &auth.LogoutRequest{})
+	c.logger.Debug("Logout: sending logout request")
+
+	req := &auth.LogoutRequest{}
+
+	_, err := c.client.Logout(ctx, req)
 	if err != nil {
-		return errors.Wrap(err, "failed to logout")
+		c.logger.Error("Logout: logout failed", zap.Error(err))
+		return errors.Wrap(err, "logout failed")
 	}
+
+	c.logger.Debug("Logout: logout successful")
 	return nil
 }
 
-// GetUsers returns a list of users with pagination. Requires authentication.
-func (c *Client) GetUsers(ctx context.Context, token string, limit, offset int32) ([]*entities.User, error) {
-	ctx = addTokenToContext(ctx, token)
-
-	resp, err := c.client.GetUsers(ctx, &auth.GetUsersRequest{
-		Limit:  limit,
-		Offset: offset,
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get users")
-	}
-
-	users := make([]*entities.User, len(resp.Users))
-	for i, u := range resp.Users {
-		users[i] = protoToUser(u)
-	}
-	return users, nil
-}
-
-// Helper functions.
-func addTokenToContext(ctx context.Context, token string) context.Context {
-	return metadata.AppendToOutgoingContext(ctx, "authorization", fmt.Sprintf("Bearer %s", token))
-}
-
-func protoToUser(u *auth.User) *entities.User {
+func protoToUser(u *auth.User) (*entities.User, error) {
 	userID, err := uuid.Parse(u.Id)
 	if err != nil {
-		return nil
+		return nil, errors.Wrap(err, "invalid user ID")
 	}
+
 	return &entities.User{
 		ID:          userID,
 		Email:       u.Email,
@@ -194,31 +253,5 @@ func protoToUser(u *auth.User) *entities.User {
 		Permissions: u.Permissions,
 		CreatedAt:   u.CreatedAt.AsTime(),
 		UpdatedAt:   u.UpdatedAt.AsTime(),
-	}
-}
-
-func extractUserIDFromToken(tokenString string) (uuid.UUID, error) {
-	tokenString = strings.TrimPrefix(tokenString, "Bearer ")
-
-	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
-	if err != nil {
-		return uuid.Nil, errors.Wrap(err, "failed to parse token")
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return uuid.Nil, errors.New("invalid token claims")
-	}
-
-	userIDStr, ok := claims["user_id"].(string)
-	if !ok {
-		return uuid.Nil, errors.New("user_id not found in token")
-	}
-
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		return uuid.Nil, errors.Wrap(err, "invalid user_id format in token")
-	}
-
-	return userID, nil
+	}, nil
 }

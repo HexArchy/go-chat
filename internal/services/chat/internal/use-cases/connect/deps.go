@@ -15,12 +15,7 @@ type ChatService interface {
 	Connect(ctx context.Context, roomID, userID uuid.UUID, conn entities.ChatConnection) error
 }
 
-type AuthService interface {
-	ValidateToken(ctx context.Context, token string) (userID uuid.UUID, err error)
-}
-
 type Deps struct {
 	WebsiteService WebsiteService
 	ChatService    ChatService
-	AuthService    AuthService
 }

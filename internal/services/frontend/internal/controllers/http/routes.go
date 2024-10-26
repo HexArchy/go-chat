@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -8,37 +9,96 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/HexArch/go-chat/internal/services/frontend/internal/entities"
+	tokenmanager "github.com/HexArch/go-chat/internal/services/frontend/internal/services/token-manager"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 )
 
-func (c *Controller) RegisterRoutes(r *mux.Router) {
+func (c *Controller) SetupRoutes() *mux.Router {
+	router := mux.NewRouter()
+
 	if err := c.loadTemplates(); err != nil {
 		c.logger.Fatal("Failed to load templates", zap.Error(err))
 	}
 
-	// Public routes.
-	r.HandleFunc("/", c.handleHome).Methods("GET")
-	r.HandleFunc("/register", c.handleRegisterPage).Methods("GET")
-	r.HandleFunc("/register", c.handleRegister).Methods("POST")
-	r.HandleFunc("/login", c.handleLoginPage).Methods("GET")
-	r.HandleFunc("/login", c.handleLogin).Methods("POST")
+	// Public.
+	router.HandleFunc("/", c.handleHome).Methods("GET")
+	router.HandleFunc("/login", c.handleLoginPage).Methods("GET")
+	router.HandleFunc("/login", c.handleLogin).Methods("POST")
+	router.HandleFunc("/register", c.handleRegisterPage).Methods("GET")
+	router.HandleFunc("/register", c.handleRegister).Methods("POST")
 
-	// Protected routes.
-	protected := r.NewRoute().Subrouter()
-	protected.Use(c.authMiddleware)
+	// Protected.
+	router.HandleFunc("/rooms", c.requireAuth(c.handleRoomsList)).Methods("GET")
+	router.HandleFunc("/rooms/create", c.requireAuth(c.handleRoomCreate)).Methods("GET", "POST")
+	router.HandleFunc("/rooms/search", c.requireAuth(c.handleRoomSearch)).Methods("GET")
+	router.HandleFunc("/rooms/{id}", c.requireAuth(c.handleRoomView)).Methods("GET")
+	router.HandleFunc("/rooms/{id}/delete", c.requireAuth(c.handleRoomDelete)).Methods("POST")
+	router.HandleFunc("/ws/rooms/{id}", c.requireAuth(c.handleWebSocket)).Methods("GET")
+	router.HandleFunc("/logout", c.requireAuth(c.handleLogout)).Methods("POST")
+	router.HandleFunc("/profile/edit", c.requireAuth(c.handleProfileEdit)).Methods("GET", "POST")
+	router.HandleFunc("/profile", c.requireAuth(c.handleProfile)).Methods("GET")
 
-	protected.HandleFunc("/logout", c.handleLogout).Methods("POST")
-	protected.HandleFunc("/profile", c.handleProfile).Methods("GET")
-	protected.HandleFunc("/profile/edit", c.handleProfileEdit).Methods("GET", "POST")
+	return router
+}
 
-	// Rooms.
-	protected.HandleFunc("/rooms", c.handleRoomsList).Methods("GET")
-	protected.HandleFunc("/rooms/create", c.handleRoomCreate).Methods("GET", "POST")
-	protected.HandleFunc("/rooms/search", c.handleRoomSearch).Methods("GET")
-	protected.HandleFunc("/rooms/{id}", c.handleRoomView).Methods("GET")
-	protected.HandleFunc("/rooms/{id}/delete", c.handleRoomDelete).Methods("POST")
-	protected.HandleFunc("/rooms/{id}/ws", c.handleWebSocket)
+func (c *Controller) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, err := c.store.Get(r, c.sessionName)
+		if err != nil {
+			c.logger.Error("Failed to get session", zap.Error(err))
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		sessionID, ok := session.Values["session_id"].(string)
+		if !ok || sessionID == "" {
+			c.logger.Debug("No session ID found",
+				zap.Bool("is_new", session.IsNew))
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		session.ID = sessionID
+
+		c.logger.Debug("Checking auth",
+			zap.String("session_id", session.ID),
+			zap.Bool("is_new", session.IsNew))
+
+		data, ok := session.Values["session_data"].(*tokenmanager.SessionData)
+		if !ok || data == nil {
+			c.logger.Debug("No session data",
+				zap.String("session_id", session.ID),
+			)
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		if data.AccessToken == "" {
+			c.logger.Debug("No access token in session",
+				zap.String("session_id", session.ID),
+			)
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, "http_request", r)
+		ctx = context.WithValue(ctx, "http_response", w)
+		ctx = contextWithToken(ctx, data.AccessToken)
+
+		if err := session.Save(r, w); err != nil {
+			c.logger.Error("Failed to save session in middleware",
+				zap.Error(err),
+				zap.String("session_id", session.ID))
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
 }
 
 func (c *Controller) loadTemplates() error {
@@ -92,9 +152,6 @@ func (c *Controller) render(w http.ResponseWriter, name string, data interface{}
 
 	tmpl, ok := c.templates[name]
 	if !ok {
-		c.logger.Error("Template not found",
-			zap.String("name", name),
-			zap.Strings("available_templates", mapKeys(c.templates)))
 		http.Error(w, "Template not found", http.StatusInternalServerError)
 		return
 	}
@@ -108,21 +165,12 @@ func (c *Controller) render(w http.ResponseWriter, name string, data interface{}
 	}
 }
 
-func (c *Controller) authMiddleware(next http.Handler) http.Handler {
-	return c.tokenManager.Middleware(next)
+// contextWithToken injects the access token into the context.
+func contextWithToken(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, entities.ContextKeyAccessToken, token)
 }
 
-func (c *Controller) getToken(r *http.Request) string {
-	if token := r.Context().Value(tokenKey); token != nil {
-		return token.(string)
-	}
-	return ""
-}
-
-func mapKeys(m map[string]*template.Template) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
+// contextWithToken injects the access token into the context.
+func contextWithUserID(ctx context.Context, userID uuid.UUID) context.Context {
+	return context.WithValue(ctx, entities.ContextKeyUserID, userID.String())
 }

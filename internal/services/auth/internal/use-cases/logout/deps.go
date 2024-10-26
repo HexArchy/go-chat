@@ -7,7 +7,7 @@ import (
 )
 
 type AuthService interface {
-	Logout(ctx context.Context, userID uuid.UUID) error
+	Revoke(ctx context.Context, userID uuid.UUID) error
 }
 
 type Deps struct {

@@ -16,11 +16,16 @@ func New(deps Deps) *UseCase {
 	}
 }
 
-func (uc *UseCase) Execute(ctx context.Context, refreshToken string) (string, string, error) {
-	newAccessToken, newRefreshToken, err := uc.authService.RefreshToken(ctx, refreshToken)
+func (uc *UseCase) Execute(ctx context.Context, refreshToken string) (*RefreshResult, error) {
+	tokenPair, err := uc.authService.Refresh(ctx, refreshToken)
 	if err != nil {
-		return "", "", errors.Wrap(err, "failed to refresh token")
+		return nil, errors.Wrap(err, "failed to refresh token")
 	}
 
-	return newAccessToken, newRefreshToken, nil
+	return &RefreshResult{
+		AccessToken:           tokenPair.AccessToken,
+		RefreshToken:          tokenPair.RefreshToken,
+		AccessTokenExpiresAt:  tokenPair.AccessTokenExpiresAt,
+		RefreshTokenExpiresAt: tokenPair.RefreshTokenExpiresAt,
+	}, nil
 }

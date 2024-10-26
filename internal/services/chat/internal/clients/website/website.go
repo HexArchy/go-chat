@@ -2,40 +2,47 @@ package website
 
 import (
 	"context"
-	"fmt"
+	"sync"
+	"time"
 
 	"github.com/HexArch/go-chat/internal/api/generated/go-chat/api/proto/website"
 	"github.com/HexArch/go-chat/internal/services/chat/internal/entities"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
 type Client struct {
+	logger       *zap.Logger
 	conn         *grpc.ClientConn
 	client       website.RoomServiceClient
 	serviceToken string
+	mutex        sync.RWMutex
 }
 
-func NewClient(address string, serviceToken string) (*Client, error) {
+func NewClient(logger *zap.Logger, address string, serviceToken string) (*Client, error) {
 	if serviceToken == "" {
 		return nil, errors.New("service token is required")
 	}
 
-	conn, err := grpc.NewClient(
+	conn, err := grpc.Dial(
 		address,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
 	)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create gRPC connection")
+		return nil, errors.Wrap(err, "failed to connect to website service")
 	}
 
 	return &Client{
+		logger:       logger,
 		conn:         conn,
 		client:       website.NewRoomServiceClient(conn),
 		serviceToken: serviceToken,
+		mutex:        sync.RWMutex{},
 	}, nil
 }
 
@@ -43,15 +50,21 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-func (c *Client) createAuthContext(ctx context.Context) context.Context {
-	md := metadata.New(map[string]string{
-		"authorization": fmt.Sprintf("Bearer %s", c.serviceToken),
-	})
-	return metadata.NewOutgoingContext(ctx, md)
+func (c *Client) createServiceContext(ctx context.Context) context.Context {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	return metadata.NewOutgoingContext(ctx, metadata.New(map[string]string{
+		"authorization": "Bearer " + c.serviceToken,
+	}))
 }
 
 func (c *Client) GetRoom(ctx context.Context, roomID uuid.UUID) (*entities.Room, error) {
-	ctx = c.createAuthContext(ctx)
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+
+	ctx = c.createServiceContext(ctx)
+
 	resp, err := c.client.GetRoom(ctx, &website.GetRoomRequest{
 		RoomId: roomID.String(),
 	})
@@ -59,16 +72,10 @@ func (c *Client) GetRoom(ctx context.Context, roomID uuid.UUID) (*entities.Room,
 		return nil, errors.Wrap(err, "failed to get room")
 	}
 
-	room, err := c.protoToRoom(resp)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to convert proto room")
-	}
-
-	return room, nil
+	return c.protoToRoom(resp)
 }
 
 func (c *Client) IsRoomOwner(ctx context.Context, roomID, userID uuid.UUID) (bool, error) {
-	ctx = c.createAuthContext(ctx)
 	room, err := c.GetRoom(ctx, roomID)
 	if err != nil {
 		return false, errors.Wrap(err, "failed to get room")
@@ -78,20 +85,19 @@ func (c *Client) IsRoomOwner(ctx context.Context, roomID, userID uuid.UUID) (boo
 }
 
 func (c *Client) RoomExists(ctx context.Context, roomID uuid.UUID) (bool, error) {
-	ctx = c.createAuthContext(ctx)
-	resp, err := c.client.GetRoom(ctx, &website.GetRoomRequest{
-		RoomId: roomID.String(),
-	})
-
+	_, err := c.GetRoom(ctx, roomID)
 	if err != nil {
-		return false, errors.Wrap(err, "failed to check room existence")
+		return false, nil // Room not found or other error.
 	}
-
-	return resp != nil, nil
+	return true, nil
 }
 
 func (c *Client) GetOwnerRooms(ctx context.Context, ownerID uuid.UUID) ([]*entities.Room, error) {
-	ctx = c.createAuthContext(ctx)
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+
+	ctx = c.createServiceContext(ctx)
+
 	resp, err := c.client.GetOwnerRooms(ctx, &website.GetOwnerRoomsRequest{
 		OwnerId: ownerID.String(),
 	})
@@ -103,7 +109,7 @@ func (c *Client) GetOwnerRooms(ctx context.Context, ownerID uuid.UUID) ([]*entit
 	for _, protoRoom := range resp.Rooms {
 		room, err := c.protoToRoom(protoRoom)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to convert proto room")
+			return nil, errors.Wrap(err, "failed to convert room")
 		}
 		rooms = append(rooms, room)
 	}
@@ -112,7 +118,11 @@ func (c *Client) GetOwnerRooms(ctx context.Context, ownerID uuid.UUID) ([]*entit
 }
 
 func (c *Client) SearchRooms(ctx context.Context, name string, limit, offset int) ([]*entities.Room, error) {
-	ctx = c.createAuthContext(ctx)
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+
+	ctx = c.createServiceContext(ctx)
+
 	resp, err := c.client.SearchRooms(ctx, &website.SearchRoomsRequest{
 		Name:   name,
 		Limit:  int32(limit),
@@ -126,7 +136,7 @@ func (c *Client) SearchRooms(ctx context.Context, name string, limit, offset int
 	for _, protoRoom := range resp.Rooms {
 		room, err := c.protoToRoom(protoRoom)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to convert proto room")
+			return nil, errors.Wrap(err, "failed to convert room")
 		}
 		rooms = append(rooms, room)
 	}
@@ -137,12 +147,12 @@ func (c *Client) SearchRooms(ctx context.Context, name string, limit, offset int
 func (c *Client) protoToRoom(protoRoom *website.Room) (*entities.Room, error) {
 	roomID, err := uuid.Parse(protoRoom.Id)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse room ID")
+		return nil, errors.Wrap(err, "invalid room ID format")
 	}
 
 	ownerID, err := uuid.Parse(protoRoom.OwnerId)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse owner ID")
+		return nil, errors.Wrap(err, "invalid owner ID format")
 	}
 
 	return &entities.Room{

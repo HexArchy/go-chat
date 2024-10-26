@@ -2,23 +2,32 @@ package auth
 
 import (
 	"context"
-	"fmt"
+	"sync"
+	"time"
 
 	"github.com/HexArch/go-chat/internal/api/generated/go-chat/api/proto/auth"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
+type ValidateResponse struct {
+	UserID      uuid.UUID
+	Permissions []string
+}
+
 type Client struct {
+	logger       *zap.Logger
 	conn         *grpc.ClientConn
 	client       auth.AuthServiceClient
 	serviceToken string
+	mutex        sync.RWMutex
 }
 
-func NewClient(address string, serviceToken string) (*Client, error) {
+func NewClient(logger *zap.Logger, address string, serviceToken string) (*Client, error) {
 	if serviceToken == "" {
 		return nil, errors.New("service token is required")
 	}
@@ -28,13 +37,15 @@ func NewClient(address string, serviceToken string) (*Client, error) {
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create gRPC connection")
+		return nil, errors.Wrap(err, "failed to connect to auth service")
 	}
 
 	return &Client{
+		logger:       logger,
 		conn:         conn,
 		client:       auth.NewAuthServiceClient(conn),
 		serviceToken: serviceToken,
+		mutex:        sync.RWMutex{},
 	}, nil
 }
 
@@ -42,51 +53,53 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-func (c *Client) createAuthContext(ctx context.Context) context.Context {
-	md := metadata.New(map[string]string{
-		"authorization": fmt.Sprintf("Bearer %s", c.serviceToken),
+// ValidateToken validates access token and returns user info.
+func (c *Client) ValidateToken(ctx context.Context, token string) (*ValidateResponse, error) {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	ctx = metadata.NewOutgoingContext(ctx, metadata.New(map[string]string{
+		"authorization": "Bearer " + token,
+	}))
+
+	resp, err := c.client.ValidateToken(ctx, &auth.ValidateTokenRequest{
+		Token: token,
 	})
-	return metadata.NewOutgoingContext(ctx, md)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to validate token")
+	}
+
+	userID, err := uuid.Parse(resp.User.Id)
+	if err != nil {
+		return nil, errors.Wrap(err, "invalid user ID format")
+	}
+
+	return &ValidateResponse{
+		UserID:      userID,
+		Permissions: resp.Permissions,
+	}, nil
 }
 
-func (c *Client) ValidateToken(ctx context.Context, token string) (uuid.UUID, error) {
-	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", fmt.Sprintf("Bearer %s", token))
-	user, err := c.GetUser(ctx, "")
-	if err != nil {
-		return uuid.Nil, errors.Wrap(err, "failed to validate token")
-	}
-
-	userID, err := uuid.Parse(user.Id)
-	if err != nil {
-		return uuid.Nil, errors.Wrap(err, "failed to parse uuid")
-	}
-
-	return userID, nil
-}
-
-func (c *Client) GetUser(ctx context.Context, userID string) (*auth.User, error) {
-	req := &auth.GetUserRequest{
-		UserId: userID,
-	}
-
-	resp, err := c.client.GetUser(ctx, req)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get user")
-	}
-
-	return resp, nil
-}
-
+// CheckUserExists verifies if user exists using service token.
 func (c *Client) CheckUserExists(ctx context.Context, userID uuid.UUID) (bool, error) {
-	ctx = c.createAuthContext(ctx)
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
 
-	user, err := c.GetUser(ctx, userID.String())
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	ctx = metadata.NewOutgoingContext(ctx, metadata.New(map[string]string{
+		"authorization": "Bearer " + c.serviceToken,
+	}))
+
+	_, err := c.client.GetUser(ctx, &auth.GetUserRequest{
+		UserId: userID.String(),
+	})
 	if err != nil {
-		return false, errors.Wrap(err, "failed to check user existence")
-	}
-
-	if user == nil {
-		return false, nil
+		return false, nil // User not found or other error.
 	}
 
 	return true, nil

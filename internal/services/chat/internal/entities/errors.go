@@ -7,4 +7,5 @@ var (
 	ErrRoomNotFound       = errors.New("room not found")
 	ErrInvalidMessageData = errors.New("invalid message data")
 	ErrUserNotFound       = errors.New("user not found")
+	ErrConnectionClosed   = errors.New("connection closed")
 )

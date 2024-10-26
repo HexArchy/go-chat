@@ -7,7 +7,7 @@ import (
 )
 
 type AuthService interface {
-	ValidateToken(ctx context.Context, tokenString string) (*entities.User, error)
+	Validate(ctx context.Context, accessToken string) (*entities.User, error)
 }
 
 type Deps struct {
