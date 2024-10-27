@@ -1,7 +1,9 @@
+// internal/services/chat/internal/services/chat/chat.go
 package chat
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -12,38 +14,29 @@ import (
 )
 
 type Service struct {
-	storage MessageStorage
-	website WebsiteClient
-	logger  *zap.Logger
-
-	rooms map[uuid.UUID]*entities.RoomState
-	mu    sync.RWMutex
+	storage     Storage
+	logger      *zap.Logger
+	rooms       map[uuid.UUID]*entities.Room
+	mu          sync.RWMutex
+	cleanupTick *time.Ticker
 }
 
-func New(deps Deps, logger *zap.Logger) *Service {
-	return &Service{
-		storage: deps.MessageStorage,
-		website: deps.WebsiteClient,
+func NewService(deps Deps, logger *zap.Logger) *Service {
+	s := &Service{
+		storage: deps.Storage,
 		logger:  logger,
-		rooms:   make(map[uuid.UUID]*entities.RoomState),
+		rooms:   make(map[uuid.UUID]*entities.Room),
 	}
+
+	s.startCleanupTicker()
+	return s
 }
 
-func (s *Service) Connect(ctx context.Context, roomID, userID uuid.UUID, conn entities.ChatConnection) error {
-	exists, err := s.website.RoomExists(ctx, roomID)
-	if err != nil {
-		return errors.Wrap(err, "failed to check room existence")
-	}
-	if !exists {
-		return entities.ErrRoomNotFound
-	}
-
+func (s *Service) Connect(ctx context.Context, roomID, userID uuid.UUID, conn entities.Connection) error {
 	room := s.getOrCreateRoom(roomID)
 
-	room.AddConnection(userID, conn)
-
 	if err := s.storage.AddParticipant(ctx, roomID, userID); err != nil {
-		s.logger.Error("Failed to add participant to storage",
+		s.logger.Error("Failed to add participant",
 			zap.Error(err),
 			zap.String("room_id", roomID.String()),
 			zap.String("user_id", userID.String()),
@@ -51,122 +44,212 @@ func (s *Service) Connect(ctx context.Context, roomID, userID uuid.UUID, conn en
 		return errors.Wrap(err, "failed to add participant")
 	}
 
-	event := &entities.ChatEvent{
+	room.AddConnection(userID, conn)
+
+	userConnectEvent := &entities.Event{
+		Type:      entities.EventUserConnected,
 		RoomID:    roomID,
 		UserID:    userID,
-		Type:      entities.EventTypeUserJoined,
 		Timestamp: time.Now(),
 	}
-	room.BroadcastEvent(event)
 
-	s.logger.Info("User connected to chat room",
+	room.BroadcastEvent(userConnectEvent, &userID)
+
+	s.logger.Info("User connected to room",
 		zap.String("room_id", roomID.String()),
 		zap.String("user_id", userID.String()),
+		zap.String("connection_type", string(conn.Type())),
 	)
 
 	return nil
 }
 
 func (s *Service) Disconnect(ctx context.Context, roomID, userID uuid.UUID) error {
-	room := s.getRoom(roomID)
-	if room == nil {
+	s.mu.RLock()
+	room, exists := s.rooms[roomID]
+	s.mu.RUnlock()
+
+	if !exists {
 		return nil
+	}
+
+	disconnectEvent := &entities.Event{
+		Type:      entities.EventUserDisconnected,
+		RoomID:    roomID,
+		UserID:    userID,
+		Timestamp: time.Now(),
+	}
+
+	room.BroadcastEvent(disconnectEvent, nil)
+
+	if err := s.storage.RemoveParticipant(ctx, roomID, userID); err != nil {
+		s.logger.Error("Failed to remove participant",
+			zap.Error(err),
+			zap.String("room_id", roomID.String()),
+			zap.String("user_id", userID.String()),
+		)
 	}
 
 	room.RemoveConnection(userID)
 
-	if err := s.storage.RemoveParticipant(ctx, roomID, userID); err != nil {
-		s.logger.Error("Failed to remove participant from storage",
-			zap.Error(err),
-			zap.String("room_id", roomID.String()),
-			zap.String("user_id", userID.String()),
-		)
-		return errors.Wrap(err, "failed to remove participant")
-	}
+	s.cleanupRoomIfEmpty(roomID)
 
-	event := &entities.ChatEvent{
-		RoomID:    roomID,
-		UserID:    userID,
-		Type:      entities.EventTypeUserLeft,
-		Timestamp: time.Now(),
-	}
-	room.BroadcastEvent(event)
-
-	s.logger.Info("User disconnected from chat room",
+	s.logger.Info("User disconnected from room",
 		zap.String("room_id", roomID.String()),
 		zap.String("user_id", userID.String()),
 	)
 
-	if len(room.GetConnections()) == 0 {
-		s.removeRoom(roomID)
-	}
-
 	return nil
 }
 
-func (s *Service) SendMessage(ctx context.Context, roomID, userID uuid.UUID, content string) error {
+func (s *Service) HandleMessage(ctx context.Context, roomID, userID uuid.UUID, content string, event *entities.Event) error {
 	isParticipant, err := s.storage.IsParticipant(ctx, roomID, userID)
 	if err != nil {
-		return errors.Wrap(err, "failed to check participant")
+		return errors.Wrap(err, "failed to verify participant")
 	}
 	if !isParticipant {
-		return errors.New("user is not a participant of this chat")
-	}
-
-	message := &entities.Message{
-		ID:        uuid.New(),
-		RoomID:    roomID,
-		UserID:    userID,
-		Content:   content,
-		CreatedAt: time.Now(),
-	}
-
-	if err := s.storage.CreateMessage(ctx, message); err != nil {
-		s.logger.Error("Failed to create message in storage",
-			zap.Error(err),
-			zap.String("room_id", roomID.String()),
-			zap.String("user_id", userID.String()),
-		)
-		return errors.Wrap(err, "failed to create message")
+		return errors.New("user is not a participant of this room")
 	}
 
 	room := s.getRoom(roomID)
 	if room == nil {
-		s.logger.Warn("Room not found in memory",
-			zap.String("room_id", roomID.String()),
-		)
-		return nil
+		return entities.ErrRoomNotFound
 	}
 
-	event := &entities.ChatEvent{
+	msg := &entities.Message{
+		ID:        uuid.New(),
 		RoomID:    roomID,
 		UserID:    userID,
-		Type:      entities.EventTypeNewMessage,
-		Message:   message,
+		Content:   content,
 		Timestamp: time.Now(),
 	}
-	room.BroadcastEvent(event)
 
-	s.logger.Debug("Message sent to chat room",
+	if err := s.storage.SaveMessage(ctx, msg); err != nil {
+		return errors.Wrap(err, "failed to save message")
+	}
+
+	if event == nil {
+		msgJSON, err := json.Marshal(msg)
+		if err != nil {
+			return errors.Wrap(err, "failed to marshal message")
+		}
+
+		event = &entities.Event{
+			Type:      entities.EventNewMessage,
+			RoomID:    roomID,
+			UserID:    userID,
+			Payload:   msgJSON,
+			Timestamp: time.Now(),
+		}
+	}
+
+	room.BroadcastEvent(event, nil)
+
+	s.logger.Debug("Message handled",
 		zap.String("room_id", roomID.String()),
 		zap.String("user_id", userID.String()),
-		zap.String("message_id", message.ID.String()),
+		zap.String("message_id", msg.ID.String()),
 	)
 
 	return nil
 }
 
-func (s *Service) GetMessages(ctx context.Context, roomID uuid.UUID, limit, offset int) ([]*entities.Message, error) {
-	messages, err := s.storage.GetRoomMessages(ctx, roomID, limit, offset)
+func (s *Service) GetRoomMessages(ctx context.Context, roomID uuid.UUID, limit, offset int) ([]*entities.Message, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	messages, err := s.storage.GetLastMessages(ctx, roomID, limit, offset)
 	if err != nil {
-		s.logger.Error("Failed to get room messages",
-			zap.Error(err),
-			zap.String("room_id", roomID.String()),
-			zap.Int("limit", limit),
-			zap.Int("offset", offset),
-		)
-		return nil, errors.Wrap(err, "failed to get room messages")
+		return nil, errors.Wrap(err, "failed to get messages")
+	}
+
+	room := s.getRoom(roomID)
+	if room == nil {
+		return nil, entities.ErrRoomNotFound
 	}
 
 	return messages, nil
+}
+
+// Internal helper methods.
+func (s *Service) getOrCreateRoom(roomID uuid.UUID) *entities.Room {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if room, exists := s.rooms[roomID]; exists {
+		return room
+	}
+
+	room := entities.NewRoom(roomID, s.logger)
+	s.rooms[roomID] = room
+	return room
+}
+
+func (s *Service) getRoom(roomID uuid.UUID) *entities.Room {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.rooms[roomID]
+}
+
+func (s *Service) cleanupRoomIfEmpty(roomID uuid.UUID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if room, exists := s.rooms[roomID]; exists {
+		if room.IsEmpty() {
+			room.CleanupConnections()
+			delete(s.rooms, roomID)
+			s.logger.Info("Room cleaned up due to no active connections",
+				zap.String("room_id", roomID.String()),
+			)
+		}
+	}
+}
+
+func (s *Service) startCleanupTicker() {
+	s.cleanupTick = time.NewTicker(5 * time.Minute)
+	go func() {
+		for range s.cleanupTick.C {
+			s.cleanupInactiveRooms()
+		}
+	}()
+}
+
+func (s *Service) cleanupInactiveRooms() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for roomID, room := range s.rooms {
+		if room.IsEmpty() {
+			room.CleanupConnections()
+			delete(s.rooms, roomID)
+			s.logger.Info("Room cleaned up during periodic cleanup",
+				zap.String("room_id", roomID.String()),
+			)
+		}
+	}
+}
+
+// Cleanup performs cleanup of all rooms and connections
+func (s *Service) Cleanup() {
+	if s.cleanupTick != nil {
+		s.cleanupTick.Stop()
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for roomID, room := range s.rooms {
+		room.CleanupConnections()
+		delete(s.rooms, roomID)
+	}
+
+	s.logger.Info("Chat service cleanup completed")
 }

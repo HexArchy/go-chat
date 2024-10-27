@@ -36,14 +36,14 @@ func (s *storage) CreateRoom(ctx context.Context, room *entities.Room) error {
 }
 
 func (s *storage) GetRoomByID(ctx context.Context, roomID uuid.UUID) (*entities.Room, error) {
-	var dto Room
-	if err := s.db.WithContext(ctx).First(&dto, "id = ?", roomID).Error; err != nil {
+	var room Room
+	if err := s.db.WithContext(ctx).First(&room, "id = ?", roomID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, entities.ErrRoomNotFound
 		}
-		return nil, errors.Wrap(err, "failed to find room by ID")
+		return nil, errors.Wrap(err, "failed to get room")
 	}
-	return DTOToRoom(&dto), nil
+	return DTOToRoom(&room), nil
 }
 
 func (s *storage) GetRoomsByOwnerID(ctx context.Context, ownerID uuid.UUID) ([]*entities.Room, error) {

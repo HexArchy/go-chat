@@ -6,24 +6,26 @@ import (
 	"github.com/google/uuid"
 )
 
+// MessageDTO represents a chat message in the database.
 type MessageDTO struct {
-	ID        uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
 	RoomID    uuid.UUID `gorm:"type:uuid;index"`
 	UserID    uuid.UUID `gorm:"type:uuid;index"`
-	Content   string    `gorm:"type:text;not null"`
-	CreatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
+	Content   string    `gorm:"type:text"`
+	CreatedAt time.Time `gorm:"autoCreateTime"`
 }
 
 func (MessageDTO) TableName() string {
 	return "chat_messages"
 }
 
-type ParticipantDTO struct {
-	RoomID   uuid.UUID `gorm:"type:uuid;primary_key"`
-	UserID   uuid.UUID `gorm:"type:uuid;primary_key"`
-	JoinedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
+// RoomParticipantDTO represents a room participant in the database.
+type RoomParticipantDTO struct {
+	RoomID    uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_room_user"`
+	UserID    uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_room_user"`
+	CreatedAt time.Time `gorm:"autoCreateTime"`
 }
 
-func (ParticipantDTO) TableName() string {
-	return "chat_participants"
+func (RoomParticipantDTO) TableName() string {
+	return "chat_room_participants"
 }

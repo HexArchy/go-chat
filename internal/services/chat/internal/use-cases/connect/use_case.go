@@ -3,16 +3,16 @@ package connect
 import (
 	"context"
 
-	"github.com/HexArch/go-chat/internal/services/chat/internal/entities"
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
 )
 
+// UseCase implements the connect use case.
 type UseCase struct {
 	websiteService WebsiteService
 	chatService    ChatService
 }
 
+// New creates a new instance of the connect use case.
 func New(deps Deps) *UseCase {
 	return &UseCase{
 		websiteService: deps.WebsiteService,
@@ -20,17 +20,11 @@ func New(deps Deps) *UseCase {
 	}
 }
 
-func (uc *UseCase) Execute(ctx context.Context, userID, roomID uuid.UUID, conn entities.ChatConnection) error {
-	exists, err := uc.websiteService.RoomExists(ctx, roomID)
-	if err != nil {
-		return errors.Wrap(err, "failed to check room existence")
-	}
-	if !exists {
-		return entities.ErrRoomNotFound
-	}
-
-	if err := uc.chatService.Connect(ctx, roomID, userID, conn); err != nil {
-		return errors.Wrap(err, "failed to connect to chat")
+// Execute performs the connection of a user to a chat room.
+func (uc *UseCase) Execute(ctx context.Context, input ConnectInput) error {
+	// Connect to chat room
+	if err := uc.chatService.Connect(ctx, input.RoomID, input.UserID, input.Connection); err != nil {
+		return errors.Wrap(err, "failed to connect to chat room")
 	}
 
 	return nil

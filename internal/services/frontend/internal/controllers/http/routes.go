@@ -37,7 +37,6 @@ func (c *Controller) SetupRoutes() *mux.Router {
 	router.HandleFunc("/rooms/search", c.requireAuth(c.handleRoomSearch)).Methods("GET")
 	router.HandleFunc("/rooms/{id}", c.requireAuth(c.handleRoomView)).Methods("GET")
 	router.HandleFunc("/rooms/{id}/delete", c.requireAuth(c.handleRoomDelete)).Methods("POST")
-	router.HandleFunc("/ws/rooms/{id}", c.requireAuth(c.handleWebSocket)).Methods("GET")
 	router.HandleFunc("/logout", c.requireAuth(c.handleLogout)).Methods("POST")
 	router.HandleFunc("/profile/edit", c.requireAuth(c.handleProfileEdit)).Methods("GET", "POST")
 	router.HandleFunc("/profile", c.requireAuth(c.handleProfile)).Methods("GET")

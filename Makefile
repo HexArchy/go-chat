@@ -33,13 +33,3 @@ gen-auth:
 		--grpc-gateway_out=./internal/api/generated \
 		--openapiv2_out=./internal/api/generated \
 		internal/api/proto/auth/auth.proto
-
-gen-chat:
-	protoc -I . \
-		-I $GOPATH/src \
-		-I $GOPATH/src/github.com/googleapis/api-common-protos \
-		--go_out=./internal/api/generated \
-		--go-grpc_out=./internal/api/generated \
-		--grpc-gateway_out=./internal/api/generated \
-		--openapiv2_out=./internal/api/generated \
-		internal/api/proto/chat/chat.proto

@@ -11,7 +11,7 @@ func Migrate(db *gorm.DB) error {
 		return errors.Wrap(err, "failed to migrate MessageDTO")
 	}
 
-	if err := db.AutoMigrate(&storage.ParticipantDTO{}); err != nil {
+	if err := db.AutoMigrate(&storage.RoomParticipantDTO{}); err != nil {
 		return errors.Wrap(err, "failed to migrate ParticipantDTO")
 	}
 	return nil

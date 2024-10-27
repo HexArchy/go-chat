@@ -8,12 +8,11 @@ import (
 	"github.com/HexArch/go-chat/internal/services/chat/internal/clients/website"
 	"github.com/HexArch/go-chat/internal/services/chat/internal/config"
 	"github.com/HexArch/go-chat/internal/services/chat/internal/controllers"
-	"github.com/HexArch/go-chat/internal/services/chat/internal/controllers/middleware"
 	"github.com/HexArch/go-chat/internal/services/chat/internal/services/chat"
 	chatstorage "github.com/HexArch/go-chat/internal/services/chat/internal/services/chat/storage"
 	connectuc "github.com/HexArch/go-chat/internal/services/chat/internal/use-cases/connect"
 	disconnectuc "github.com/HexArch/go-chat/internal/services/chat/internal/use-cases/disconnect"
-	getmessagesuc "github.com/HexArch/go-chat/internal/services/chat/internal/use-cases/get-messages"
+	getmessages "github.com/HexArch/go-chat/internal/services/chat/internal/use-cases/get-messages"
 	sendmessageuc "github.com/HexArch/go-chat/internal/services/chat/internal/use-cases/send-message"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -53,10 +52,9 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 		return nil, errors.Wrap(err, "failed to create website client")
 	}
 
-	messageStorage := chatstorage.New(db)
-	chatService := chat.New(chat.Deps{
-		MessageStorage: messageStorage,
-		WebsiteClient:  websiteClient,
+	messageStorage := chatstorage.NewStorage(db)
+	chatService := chat.NewService(chat.Deps{
+		Storage: messageStorage,
 	}, logger)
 
 	connectUC := connectuc.New(connectuc.Deps{
@@ -72,12 +70,11 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 		ChatService: chatService,
 	})
 
-	getMessagesUC := getmessagesuc.New(getmessagesuc.Deps{
-		ChatService:    chatService,
-		WebsiteService: websiteClient,
+	getMessagesUC := getmessages.New(getmessages.Deps{
+		ChatService: chatService,
 	})
 
-	chatServiceServer := controllers.NewChatServiceServer(
+	wsHandler := controllers.NewWebSocketHandler(
 		logger,
 		connectUC,
 		disconnectUC,
@@ -91,8 +88,7 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 	server := controllers.NewServer(
 		logger,
 		cfg,
-		chatServiceServer,
-		middleware.NewAuthMiddleware(logger, authClient),
+		wsHandler,
 	)
 
 	return &App{

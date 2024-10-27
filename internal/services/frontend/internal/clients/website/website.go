@@ -29,7 +29,6 @@ func NewClient(logger *zap.Logger, address string, authInterceptor *shared.AuthI
 		address,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithUnaryInterceptor(authInterceptor.UnaryClientInterceptor()),
-		grpc.WithStreamInterceptor(authInterceptor.StreamClientInterceptor()),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to dial website service")

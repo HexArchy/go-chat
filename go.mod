@@ -12,6 +12,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0
 	github.com/knadh/koanf v1.5.0
+	github.com/lib/pq v1.10.9
 	github.com/pkg/errors v0.9.1
 	github.com/rs/cors v1.11.1
 	go.uber.org/zap v1.21.0

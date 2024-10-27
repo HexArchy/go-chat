@@ -28,7 +28,7 @@ website_service:
   service_token: "secret"  # Будет получен из Vault
 
 chat_service:
-  address: "chat-service:9092"
+  address: "chat-service:8082"
   service_token: "secret"  # Будет получен из Vault
 
 session:

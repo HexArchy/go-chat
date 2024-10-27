@@ -17,28 +17,28 @@ import (
 
 // Controller handles HTTP requests and interacts with use-cases.
 type Controller struct {
-	logger                 *zap.Logger
-	cfg                    *config.Config
-	loginUseCase           authUseCases.LoginUseCase
-	registerUseCase        authUseCases.RegisterUseCase
-	logoutUseCase          authUseCases.LogoutUseCase
-	getProfileUseCase      profileUseCases.GetProfileUseCase
-	editProfileUseCase     profileUseCases.EditProfileUseCase
-	createRoomUseCase      roomsUseCases.CreateRoomUseCase
-	deleteRoomUseCase      roomsUseCases.DeleteRoomUseCase
-	listRoomsUseCase       roomsUseCases.ListRoomsUseCase
-	listOwnRoomsUseCase    roomsUseCases.ListOwnRoomsUseCase
-	searchRoomsUseCase     roomsUseCases.SearchRoomsUseCase
-	viewRoomUseCase        roomsUseCases.ViewRoomUseCase
-	manageWebSocketUseCase roomsUseCases.ManageWebSocketUseCase
-	tokenManager           tokenmanager.TokenManager
-	templates              map[string]*template.Template
-	upgrader               websocket.Upgrader
-	roomClients            map[string]map[*websocket.Conn]bool
-	store                  sessions.Store
-	sessionName            string
-	tokenKey               string
-	mu                     sync.RWMutex
+	logger              *zap.Logger
+	cfg                 *config.Config
+	loginUseCase        authUseCases.LoginUseCase
+	registerUseCase     authUseCases.RegisterUseCase
+	logoutUseCase       authUseCases.LogoutUseCase
+	getProfileUseCase   profileUseCases.GetProfileUseCase
+	editProfileUseCase  profileUseCases.EditProfileUseCase
+	createRoomUseCase   roomsUseCases.CreateRoomUseCase
+	deleteRoomUseCase   roomsUseCases.DeleteRoomUseCase
+	listRoomsUseCase    roomsUseCases.ListRoomsUseCase
+	listOwnRoomsUseCase roomsUseCases.ListOwnRoomsUseCase
+	searchRoomsUseCase  roomsUseCases.SearchRoomsUseCase
+	viewRoomUseCase     roomsUseCases.ViewRoomUseCase
+	tokenManager        tokenmanager.TokenManager
+	templates           map[string]*template.Template
+	upgrader            websocket.Upgrader
+	roomClients         map[string]map[*websocket.Conn]bool
+	store               sessions.Store
+	sessionName         string
+	tokenKey            string
+	chatServiceURL      string
+	mu                  sync.RWMutex
 }
 
 // NewController creates a new Controller with all dependencies.
@@ -56,29 +56,28 @@ func NewController(
 	listOwnRoomsUseCase roomsUseCases.ListOwnRoomsUseCase,
 	searchRoomsUseCase roomsUseCases.SearchRoomsUseCase,
 	viewRoomUseCase roomsUseCases.ViewRoomUseCase,
-	manageWebSocketUseCase roomsUseCases.ManageWebSocketUseCase,
 	tokenManager tokenmanager.TokenManager,
 	store sessions.Store,
 	sessionName string,
 	tokenKey string,
+	chatServiceURL string,
 ) *Controller {
 	return &Controller{
-		logger:                 logger,
-		cfg:                    cfg,
-		loginUseCase:           loginUseCase,
-		registerUseCase:        registerUseCase,
-		logoutUseCase:          logoutUseCase,
-		getProfileUseCase:      getProfileUseCase,
-		editProfileUseCase:     editProfileUseCase,
-		createRoomUseCase:      createRoomUseCase,
-		deleteRoomUseCase:      deleteRoomUseCase,
-		listRoomsUseCase:       listRoomsUseCase,
-		listOwnRoomsUseCase:    listOwnRoomsUseCase,
-		searchRoomsUseCase:     searchRoomsUseCase,
-		viewRoomUseCase:        viewRoomUseCase,
-		manageWebSocketUseCase: manageWebSocketUseCase,
-		tokenManager:           tokenManager,
-		templates:              make(map[string]*template.Template),
+		logger:              logger,
+		cfg:                 cfg,
+		loginUseCase:        loginUseCase,
+		registerUseCase:     registerUseCase,
+		logoutUseCase:       logoutUseCase,
+		getProfileUseCase:   getProfileUseCase,
+		editProfileUseCase:  editProfileUseCase,
+		createRoomUseCase:   createRoomUseCase,
+		deleteRoomUseCase:   deleteRoomUseCase,
+		listRoomsUseCase:    listRoomsUseCase,
+		listOwnRoomsUseCase: listOwnRoomsUseCase,
+		searchRoomsUseCase:  searchRoomsUseCase,
+		viewRoomUseCase:     viewRoomUseCase,
+		tokenManager:        tokenManager,
+		templates:           make(map[string]*template.Template),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -86,9 +85,10 @@ func NewController(
 				return true
 			},
 		},
-		roomClients: make(map[string]map[*websocket.Conn]bool),
-		store:       store,
-		sessionName: sessionName,
-		tokenKey:    tokenKey,
+		roomClients:    make(map[string]map[*websocket.Conn]bool),
+		store:          store,
+		sessionName:    sessionName,
+		tokenKey:       tokenKey,
+		chatServiceURL: chatServiceURL,
 	}
 }

@@ -8,7 +8,6 @@ import (
 
 	"github.com/HexArch/go-chat/internal/pkg/graceful-shutdown"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/clients/auth"
-	"github.com/HexArch/go-chat/internal/services/frontend/internal/clients/chat"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/clients/shared"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/clients/website"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/config"
@@ -73,11 +72,6 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 		return nil, errors.Wrap(err, "failed to create website client")
 	}
 
-	chatClient, err := chat.NewClient(logger, cfg.ChatService.Address, authInterceptor)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create chat client")
-	}
-
 	controller := httpadmin.NewController(
 		logger, cfg,
 		authuc.NewLoginUseCase(authClient, logger),
@@ -90,9 +84,8 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 		roomsuc.NewListRoomsUseCase(websiteClient, logger),
 		roomsuc.NewOwnListRoomsUseCase(websiteClient, logger),
 		roomsuc.NewSearchRoomsUseCase(websiteClient, logger),
-		roomsuc.NewViewRoomUseCase(websiteClient, chatClient, logger),
-		roomsuc.NewManageWebSocketUseCase(chatClient, logger),
-		tokenManager, store, sessionName, tokenKey,
+		roomsuc.NewViewRoomUseCase(websiteClient, logger),
+		tokenManager, store, sessionName, tokenKey, cfg.ChatService.Address,
 	)
 
 	router := controller.SetupRoutes()

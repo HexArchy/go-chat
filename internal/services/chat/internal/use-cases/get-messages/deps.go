@@ -7,15 +7,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// ChatService defines the interface for chat operations.
 type ChatService interface {
-	GetMessages(ctx context.Context, roomID uuid.UUID, limit, offset int) ([]*entities.Message, error)
+	GetRoomMessages(ctx context.Context, roomID uuid.UUID, limit, offset int) ([]*entities.Message, error)
 }
 
-type WebsiteService interface {
-	RoomExists(ctx context.Context, roomID uuid.UUID) (bool, error)
-}
-
+// Deps holds the dependencies for the get messages use case.
 type Deps struct {
-	ChatService    ChatService
-	WebsiteService WebsiteService
+	ChatService ChatService
 }
