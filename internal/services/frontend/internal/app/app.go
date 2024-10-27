@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/HexArch/go-chat/internal/pkg/graceful-shutdown"
+	graceful "github.com/HexArch/go-chat/internal/pkg/graceful-shutdown"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/clients/auth"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/clients/shared"
 	"github.com/HexArch/go-chat/internal/services/frontend/internal/clients/website"

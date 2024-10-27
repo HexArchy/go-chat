@@ -271,12 +271,9 @@ services:
       - URLS[0].name=Auth API
       - URLS[1].url=/swagger/website.swagger.json
       - URLS[1].name=Website API
-      - URLS[2].url=/swagger/chat.swagger.json
-      - URLS[2].name=Chat API
     volumes:
       - ./internal/api/generated/internal/api/proto/auth/auth.swagger.json:/swagger/auth.swagger.json
       - ./internal/api/generated/internal/api/proto/website/website.swagger.json:/swagger/website.swagger.json
-      - ./internal/api/generated/internal/api/proto/chat/chat.swagger.json:/swagger/chat.swagger.json
     networks:
       - backend
 

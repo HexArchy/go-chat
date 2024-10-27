@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/HexArch/go-chat/internal/pkg/graceful-shutdown"
+	graceful "github.com/HexArch/go-chat/internal/pkg/graceful-shutdown"
 	"github.com/HexArch/go-chat/internal/services/auth/internal/config"
 	"github.com/HexArch/go-chat/internal/services/auth/internal/controllers"
 	"github.com/HexArch/go-chat/internal/services/auth/internal/services/auth"

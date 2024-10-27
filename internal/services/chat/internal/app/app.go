@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/HexArch/go-chat/internal/pkg/graceful-shutdown"
+	graceful "github.com/HexArch/go-chat/internal/pkg/graceful-shutdown"
 	"github.com/HexArch/go-chat/internal/services/chat/internal/clients/auth"
 	"github.com/HexArch/go-chat/internal/services/chat/internal/clients/website"
 	"github.com/HexArch/go-chat/internal/services/chat/internal/config"
