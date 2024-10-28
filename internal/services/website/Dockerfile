@@ -38,6 +38,7 @@ COPY --from=builder /app/internal/services/website/configs ./configs
 # Открываем порты для HTTP и gRPC
 EXPOSE 8081
 EXPOSE 9091
+EXPOSE 9101
 
 # Устанавливаем точку входа
 CMD ["./website-service", "-config", "./configs/config.prod.yaml"]

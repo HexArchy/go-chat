@@ -38,6 +38,7 @@ COPY --from=builder /app/internal/services/auth/configs ./configs
 # Открываем порты для HTTP и gRPC
 EXPOSE 8080
 EXPOSE 9090
+EXPOSE 9100
 
 # Устанавливаем точку входа
 CMD ["./auth-service", "-config", "./configs/config.prod.yaml"]

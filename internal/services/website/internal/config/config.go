@@ -28,6 +28,7 @@ type Config struct {
 
 type EnginesConfig struct {
 	Storage StorageConfig `koanf:"storage"`
+	Metrics Metrics       `koanf:"metrics"`
 }
 
 type StorageConfig struct {
@@ -35,6 +36,10 @@ type StorageConfig struct {
 	MaxOpenConns    int           `koanf:"max_open_conns"`
 	MaxIdleConns    int           `koanf:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `koanf:"conn_max_lifetime"`
+}
+
+type Metrics struct {
+	Address string `koanf:"address"`
 }
 
 type LoggingConfig struct {

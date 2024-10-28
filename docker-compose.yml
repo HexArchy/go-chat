@@ -24,7 +24,10 @@ services:
         condition: service_healthy
       vault-setup:
         condition: service_completed_successfully
-
+    expose:
+      - "8080"
+      - "9090"
+      - "9100"
     ports:
       - "8080:8080"
       - "9090:9090"
@@ -55,7 +58,10 @@ services:
         condition: service_healthy
       vault-setup:
         condition: service_completed_successfully
-
+    expose:
+      - "8081"
+      - "9091"
+      - "9101"
     ports:
       - "8081:8081"
       - "9091:9091"
@@ -260,6 +266,9 @@ services:
       - swagger-ui
       - vault
       - pgadmin
+      - prometheus
+      - grafana
+      - alertmanager
     networks:
       - backend
 
@@ -277,9 +286,81 @@ services:
     networks:
       - backend
 
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/rules:/etc/prometheus/rules
+      - prometheus_data:/prometheus
+    expose:
+      - "9090"
+    networks:
+      - backend
+    depends_on:
+      - auth-service
+      - node-exporter
+
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    volumes:
+      - ./alertmanager:/etc/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/config.yml"
+      - "--storage.path=/alertmanager"
+    expose:
+      - "9093"
+    networks:
+      - backend
+    depends_on:
+      - prometheus
+
+  grafana:
+    image: grafana/grafana:10.0.3
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_DOMAIN=grafana.localhost
+      - GF_SERVER_ROOT_URL=http://grafana.localhost
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel
+    expose:
+      - "3000"
+    networks:
+      - backend
+    depends_on:
+      - prometheus
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    expose:
+      - "9100"
+    networks:
+      - backend
+
 networks:
   backend:
+    driver: bridge
 
 volumes:
   postgres-data:
   vault-data:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:

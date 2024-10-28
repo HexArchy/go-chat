@@ -1,0 +1,56 @@
+apiVersion: 1
+
+groups:
+  - name: Auth Service Alerts
+    folder: Auth Service
+    interval: 30s
+    rules:
+      - name: High Error Rate
+        condition: |
+          sum(rate(auth_service_errors_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High error rate detected
+          description: Error rate is above 10% for 5 minutes
+
+      - name: High Response Time
+        condition: |
+          avg(rate(auth_service_request_duration_seconds_sum[5m]) / 
+              rate(auth_service_request_duration_seconds_count[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High response time detected
+          description: Average response time is above 1 second for 5 minutes
+
+      - name: High Memory Usage
+        condition: |
+          process_resident_memory_bytes{job="auth-service"} > 1e9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High memory usage detected
+          description: Memory usage is above 1GB for 5 minutes
+
+      - name: High CPU Usage
+        condition: |
+          rate(process_cpu_seconds_total{job="auth-service"}[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High CPU usage detected
+          description: CPU usage is above 80% for 5 minutes
+
+# Notification channels
+notifiers:
+  - name: Email
+    type: email
+    uid: email_notifier
+    settings:
+      addresses: admin@example.com
+    isDefault: true

@@ -7,6 +7,9 @@ import (
 	graceful "github.com/HexArch/go-chat/internal/pkg/graceful-shutdown"
 	"github.com/HexArch/go-chat/internal/services/auth/internal/config"
 	"github.com/HexArch/go-chat/internal/services/auth/internal/controllers"
+	"github.com/HexArch/go-chat/internal/services/auth/internal/controllers/cache"
+	"github.com/HexArch/go-chat/internal/services/auth/internal/controllers/middleware"
+	"github.com/HexArch/go-chat/internal/services/auth/internal/metrics"
 	"github.com/HexArch/go-chat/internal/services/auth/internal/services/auth"
 	tokenstorage "github.com/HexArch/go-chat/internal/services/auth/internal/services/auth/storage"
 	"github.com/HexArch/go-chat/internal/services/auth/internal/services/user"
@@ -37,6 +40,7 @@ type App struct {
 }
 
 func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, error) {
+	// Initialize database.
 	db, err := gorm.Open(postgres.Open(cfg.Engines.Storage.URL), &gorm.Config{})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to connect to database")
@@ -51,11 +55,12 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 	sqlDB.SetMaxIdleConns(cfg.Engines.Storage.MaxIdleConns)
 	sqlDB.SetConnMaxLifetime(cfg.Engines.Storage.ConnMaxLifetime)
 
+	// Initialize storages.
 	userStorage := userstorage.New(db)
 	tokenStorage := tokenstorage.New(db)
 
+	// Initialize services.
 	userService := user.NewService(user.Deps{UserStorage: userStorage})
-
 	authService := auth.NewService(
 		auth.Deps{
 			UserStorage:  userStorage,
@@ -71,6 +76,7 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 		},
 	)
 
+	// Initialize use cases.
 	createUserUC := createuser.New(createuser.Deps{UserService: userService})
 	loginUC := login.New(login.Deps{AuthService: authService})
 	refreshTokenUC := refreshtoken.New(refreshtoken.Deps{AuthService: authService})
@@ -81,22 +87,53 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, 
 	updateUserUC := updateuser.New(updateuser.Deps{UserService: userService})
 	deleteUserUC := deleteuser.New(deleteuser.Deps{UserService: userService})
 
-	authServiceServer := controllers.NewAuthServiceServer(
+	// Initialize metrics.
+	metrics := metrics.NewAuthMetrics("auth_service")
+
+	// Initialize cache.
+	tokenCache := cache.NewTokenCache(5 * time.Minute)
+
+	// Initialize controllers.
+	authCtrl := controllers.NewAuthController(
 		logger,
+		metrics,
 		createUserUC,
 		loginUC,
 		refreshTokenUC,
 		validateTokenUC,
 		logoutUC,
+	)
+
+	usersCtrl := controllers.NewUsersController(
+		logger,
+		metrics,
 		getUserUC,
 		getUsersUC,
 		updateUserUC,
 		deleteUserUC,
 	)
 
-	grShutdown := graceful.NewShutdown(logger)
+	// Initialize middleware.
+	authMiddleware := middleware.NewAuthMiddleware(
+		logger,
+		metrics,
+		tokenCache,
+		validateTokenUC,
+		cfg.Auth.ServiceToken,
+	)
 
-	server := controllers.NewServer(logger, cfg, authServiceServer, []byte(cfg.Auth.JWT.AccessSecret), validateTokenUC, cfg.Auth.ServiceToken)
+	// Initialize server.
+	server := controllers.NewServer(
+		cfg,
+		logger,
+		authCtrl,
+		usersCtrl,
+		tokenCache,
+		metrics,
+		authMiddleware,
+	)
+
+	grShutdown := graceful.NewShutdown(logger)
 
 	return &App{
 		cfg:        cfg,
@@ -121,5 +158,9 @@ func (a *App) Start(ctx context.Context) {
 }
 
 func (a *App) Stop(ctx context.Context) error {
-	return a.server.Stop(ctx)
+	a.logger.Info("Stopping application")
+	if err := a.server.Stop(ctx); err != nil {
+		return errors.Wrap(err, "failed to stop server")
+	}
+	return nil
 }

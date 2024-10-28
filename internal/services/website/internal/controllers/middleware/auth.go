@@ -3,8 +3,10 @@ package middleware
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/HexArch/go-chat/internal/services/website/internal/clients/auth"
+	"github.com/HexArch/go-chat/internal/services/website/internal/metrics"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -21,21 +23,27 @@ const (
 	BearerPrefix                   = "Bearer "
 )
 
-// publicEndpoints maps endpoints that don't require authentication.
 var publicEndpoints = map[string]bool{
 	"/website.RoomService/SearchRooms": true,
 	"/website.RoomService/GetRoom":     true,
+	"/website.RoomService/GetAllRooms": true,
 }
 
 type AuthMiddleware struct {
 	logger     *zap.Logger
 	authClient *auth.AuthClient
+	metrics    *metrics.WebsiteMetrics
 }
 
-func NewAuthMiddleware(logger *zap.Logger, authClient *auth.AuthClient) *AuthMiddleware {
+func NewAuthMiddleware(
+	logger *zap.Logger,
+	authClient *auth.AuthClient,
+	metrics *metrics.WebsiteMetrics,
+) *AuthMiddleware {
 	return &AuthMiddleware{
 		logger:     logger,
 		authClient: authClient,
+		metrics:    metrics,
 	}
 }
 
@@ -46,16 +54,21 @@ func (m *AuthMiddleware) UnaryInterceptor() grpc.UnaryServerInterceptor {
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (interface{}, error) {
+		start := time.Now()
+		m.metrics.IncActiveRequests()
+		defer m.metrics.DecActiveRequests()
+
 		// Skip auth for public endpoints.
 		if publicEndpoints[info.FullMethod] {
 			return handler(ctx, req)
 		}
 
-		token, err := extractToken(ctx)
+		token, err := m.extractToken(ctx)
 		if err != nil {
 			m.logger.Debug("Failed to extract token",
 				zap.String("method", info.FullMethod),
 				zap.Error(err))
+			m.metrics.RecordError("token_extraction_failed")
 			return nil, err
 		}
 
@@ -65,6 +78,7 @@ func (m *AuthMiddleware) UnaryInterceptor() grpc.UnaryServerInterceptor {
 			m.logger.Error("Token validation failed",
 				zap.String("method", info.FullMethod),
 				zap.Error(err))
+			m.metrics.RecordError("token_validation_failed")
 			return nil, status.Error(codes.Unauthenticated, "invalid token")
 		}
 
@@ -72,11 +86,17 @@ func (m *AuthMiddleware) UnaryInterceptor() grpc.UnaryServerInterceptor {
 		newCtx := context.WithValue(ctx, UserIDKey, validationResp.UserID)
 		newCtx = context.WithValue(newCtx, PermissionsKey, validationResp.Permissions)
 
+		// Record request duration.
+		defer func() {
+			duration := time.Since(start).Seconds()
+			m.metrics.RecordRequestDuration(info.FullMethod, "success", duration)
+		}()
+
 		return handler(newCtx, req)
 	}
 }
 
-func extractToken(ctx context.Context) (string, error) {
+func (m *AuthMiddleware) extractToken(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", status.Error(codes.Unauthenticated, "no metadata provided")
@@ -95,7 +115,7 @@ func extractToken(ctx context.Context) (string, error) {
 	return strings.TrimPrefix(token, BearerPrefix), nil
 }
 
-// Helper functions for controllers.
+// Helper functions.
 func GetUserIDFromContext(ctx context.Context) (string, error) {
 	userID, ok := ctx.Value(UserIDKey).(string)
 	if !ok {
@@ -110,4 +130,32 @@ func GetPermissionsFromContext(ctx context.Context) ([]string, error) {
 		return nil, status.Error(codes.Internal, "permissions not found in context")
 	}
 	return permissions, nil
+}
+
+func HasPermission(ctx context.Context, requiredPermission string) bool {
+	permissions, err := GetPermissionsFromContext(ctx)
+	if err != nil {
+		return false
+	}
+
+	for _, p := range permissions {
+		if p == requiredPermission {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *AuthMiddleware) ValidateRoomOwner(ctx context.Context, roomOwnerID string) error {
+	userID, err := GetUserIDFromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if userID != roomOwnerID {
+		m.metrics.RecordError("permission_denied")
+		return status.Error(codes.PermissionDenied, "not room owner")
+	}
+
+	return nil
 }

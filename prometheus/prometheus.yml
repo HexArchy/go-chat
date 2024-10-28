@@ -1,0 +1,56 @@
+global:
+  scrape_interval: 15s     # Как часто собирать метрики
+  evaluation_interval: 15s  # Как часто вычислять правила
+  scrape_timeout: 10s      # Таймаут для сбора метрик
+
+# Правила алертинга и записи
+rule_files:
+  - "/etc/prometheus/rules/*.yml"
+
+# Настройка алертменеджера
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - 'alertmanager:9093'
+
+# Настройки сбора метрик
+scrape_configs:
+  # Сбор метрик с Auth Service
+  - job_name: 'auth-service'
+    static_configs:
+      - targets: ['auth-service:9100']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_interval: 5s
+    scrape_timeout: 4s
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'go_.*'
+        action: drop
+  - job_name: 'website-service'
+    static_configs:
+      - targets: ['website-service:9101']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_interval: 5s
+    scrape_timeout: 4s
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'go_.*'
+        action: drop
+
+  # Сбор метрик с самого Prometheus
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Сбор метрик с Node Exporter для системных метрик
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Сбор метрик с Grafana
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']

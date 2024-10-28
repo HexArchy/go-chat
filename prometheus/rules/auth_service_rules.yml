@@ -1,0 +1,39 @@
+groups:
+  - name: auth_service_rules
+    rules:
+      - record: auth_service:request_duration:avg5m
+        expr: |
+          rate(auth_service_request_duration_seconds_sum[5m])
+          /
+          rate(auth_service_request_duration_seconds_count[5m])
+
+      - record: auth_service:error_rate:5m
+        expr: |
+          sum(rate(auth_service_errors_total[5m])) 
+          / 
+          sum(rate(auth_service_request_duration_seconds_count[5m]))
+
+      - record: auth_service:cache_hit_rate:5m
+        expr: |
+          rate(auth_service_cache_hits_total[5m])
+          /
+          rate(auth_service_request_duration_seconds_count[5m])
+
+      # Alert rules
+      - alert: HighErrorRate
+        expr: auth_service:error_rate:5m > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High error rate
+          description: Error rate is {{ $value | humanizePercentage }} over the last 5m
+
+      - alert: SlowRequests
+        expr: auth_service:request_duration:avg5m > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Slow requests detected
+          description: Average request duration is {{ $value | humanizeDuration }} over the last 5m
